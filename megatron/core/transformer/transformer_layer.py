@@ -387,6 +387,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         self.mlp_bda = build_module(submodules.mlp_bda)
 
         self.is_moe_layer = isinstance(self.mlp, MoELayer)
+        self.moe_layer_idx = None
 
         self.recompute_input_layernorm = False
         self.recompute_pre_mlp_layernorm = False
@@ -511,6 +512,13 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         )
         return get_transformer_layer_offset(config)
 
+    def set_moe_layer_number(self, moe_layer_idx: int) -> Optional[bool]:
+        if self.is_moe_layer:
+            self.moe_layer_idx = moe_layer_idx
+            self.mlp.set_moe_layer_number(moe_layer_idx)
+            return True
+        return None
+
     def forward(self, *args, **kwargs):
         """
         Perform a forward pass through the transformer layer.
@@ -523,6 +531,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             hidden_states,
             kwargs.get("inference_context", None),
             padding_mask=kwargs.get("padding_mask", None),
+            moe_routing_replay_data=kwargs.get("moe_routing_replay_data", None),
         )
         return output, context
 
@@ -541,6 +550,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_routing_replay_data: Optional[Any] = None,
         *,
         inference_params: Optional[Any] = None,
     ):
@@ -688,7 +698,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
 
         return pre_mlp_layernorm_output
 
-    def _forward_mlp(self, hidden_states, inference_context=None, padding_mask=None):
+    def _forward_mlp(self, hidden_states, inference_context=None, padding_mask=None, moe_routing_replay_data=None):
         """
         Perform a forward pass through the feed-forward layer.
 
@@ -729,21 +739,45 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
                 # import here to avoid circular import
                 from megatron.core.extensions.transformer_engine import te_checkpoint
 
-                mlp_output_with_bias = te_checkpoint(
+                if self.is_moe_layer:
+                    mlp_output_with_bias = te_checkpoint(
+                        self.mlp,
+                        False,
+                        tensor_parallel.random.get_cuda_rng_tracker,
+                        self.pg_collection.tp,
+                        pre_mlp_layernorm_output,
+                        moe_routing_replay_data,
+                    )
+                else:
+                    mlp_output_with_bias = te_checkpoint(
+                        self.mlp,
+                        False,
+                        tensor_parallel.random.get_cuda_rng_tracker,
+                        self.pg_collection.tp,
+                        pre_mlp_layernorm_output,
+                    )
+            elif self.is_moe_layer:
+                mlp_output_with_bias = tensor_parallel.checkpoint(
                     self.mlp,
                     False,
-                    tensor_parallel.random.get_cuda_rng_tracker,
-                    self.pg_collection.tp,
                     pre_mlp_layernorm_output,
                     padding_mask=padding_mask,
+                    moe_routing_replay_data=moe_routing_replay_data,
                 )
             else:
                 mlp_output_with_bias = tensor_parallel.checkpoint(
-                    functools.partial(self.mlp, padding_mask=padding_mask),
+                    functools.partial(
+                        self.mlp,
+                        padding_mask=padding_mask,
+                        moe_routing_replay_data=moe_routing_replay_data,
+                    ),
                     False,
                     pre_mlp_layernorm_output,
                 )
         elif should_chunk_mlp_for_prefill:
+            # TODO(pjin)
+            assert not self.is_moe_layer or moe_routing_replay_data is None
+
             # Chunk input along sequence dimension
             num_chunks = min(self.config.mlp_chunks_for_prefill, pre_mlp_layernorm_output.shape[0])
             chunks = pre_mlp_layernorm_output.chunk(num_chunks, dim=0)
@@ -756,6 +790,8 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             bias_chunks = [bias for _, bias in outputs if bias is not None]
             bias_output = torch.stack(bias_chunks, dim=0).sum(dim=0) if bias_chunks else None
             mlp_output_with_bias = (mlp_output, bias_output)
+        elif self.is_moe_layer:
+            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output, moe_routing_replay_data)
         else:
             if using_fused_tp_inference_kernel:
                 # Set the residual for fused reduce-scatter + add + layer-norm + all-gather

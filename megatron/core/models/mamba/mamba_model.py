@@ -1,6 +1,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from torch import Tensor
 
@@ -160,6 +160,11 @@ class MambaModel(LanguageModule):
             pg_collection=self.pg_collection,
         )
 
+        moe_layer_idx = 0
+        for layer_name, layer in self.decoder.named_modules():
+            if layer.set_moe_layer_number(moe_layer_idx):
+                moe_layer_idx += 1
+
         # MTP block - uses mtp_block_spec from mamba_stack_spec.submodules
         if self.mtp_process:
             mamba_submodules = mamba_stack_spec.submodules
@@ -232,6 +237,7 @@ class MambaModel(LanguageModule):
         loss_mask: Optional[Tensor] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_routing_replay_data: Optional[Any] = None,
     ) -> Tensor:
         """Forward function of the Mamba model. This function passes the input tensors
         through the embedding layer, and then the decoder and finally into the post
@@ -302,6 +308,7 @@ class MambaModel(LanguageModule):
             rotary_pos_emb=rotary_pos_emb,
             packed_seq_params=packed_seq_params,
             padding_mask=padding_mask,
+            moe_routing_replay_data=moe_routing_replay_data,
         )
 
         output_weight = None

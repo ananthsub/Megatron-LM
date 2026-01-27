@@ -2,7 +2,7 @@
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import torch
 from torch import Tensor
@@ -452,6 +452,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         rotary_pos_emb: Tensor,
         attention_bias: Tensor,
         packed_seq_params: PackedSeqParams,
+        moe_routing_replay_data: Optional[Any],
         use_inner_quantization_context: bool,
         padding_mask: Optional[Tensor] = None,
     ):
@@ -496,6 +497,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                             inference_context=None,
                             packed_seq_params=packed_seq_params,
                             padding_mask=padding_mask,
+                            moe_routing_replay_data=moe_routing_replay_data,
                         )
                 return hidden_states, context
 
@@ -624,6 +626,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_routing_replay_data: Optional[Any] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         dynamic_inference_decode_only: Optional[bool] = None,
@@ -732,6 +735,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                     rotary_pos_emb=rotary_pos_emb,
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
+                    moe_routing_replay_data=moe_routing_replay_data,
                     use_inner_quantization_context=use_inner_quantization_context,
                     padding_mask=padding_mask,
                 )
@@ -767,6 +771,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                             packed_seq_params=packed_seq_params,
                             sequence_len_offset=sequence_len_offset,
                             padding_mask=padding_mask,
+                            moe_routing_replay_data=moe_routing_replay_data,
                         )
 
                     if (

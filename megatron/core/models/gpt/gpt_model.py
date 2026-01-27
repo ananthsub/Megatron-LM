@@ -1,7 +1,7 @@
 # Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
 from collections import OrderedDict
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import torch
 from torch import Tensor
@@ -214,6 +214,11 @@ class GPTModel(LanguageModule):
             pg_collection=self.pg_collection,
             vp_stage=vp_stage,
         )
+
+        moe_layer_idx = 0
+        for layer_name, layer in self.decoder.named_modules():
+            if layer.set_moe_layer_number(moe_layer_idx):
+                moe_layer_idx += 1
 
         if self.mtp_process:
             self.mtp = MultiTokenPredictionBlock(
@@ -478,6 +483,7 @@ class GPTModel(LanguageModule):
         packed_seq_params: PackedSeqParams = None,
         extra_block_kwargs: dict = None,
         runtime_gather_output: Optional[bool] = None,
+        moe_routing_replay_data: Optional[Any] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         loss_mask: Optional[Tensor] = None,
@@ -533,6 +539,7 @@ class GPTModel(LanguageModule):
             packed_seq_params=packed_seq_params,
             sequence_len_offset=sequence_len_offset,
             padding_mask=padding_mask,
+            moe_routing_replay_data=moe_routing_replay_data,
             **(extra_block_kwargs or {}),
         )
 
