@@ -677,7 +677,7 @@ def topk_routing_with_score_function(
         topk: int,
         num_groups: Optional[int] = None,
         group_topk: Optional[int] = None,
-        topk_routing_replay_indices = None,
+        topk_replay_indices = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute the top-k indices for the given scores.
 
@@ -692,7 +692,8 @@ def topk_routing_with_score_function(
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: The top-k indices and the top-k scores.
         """
-        if group_topk:
+        if (num_groups and num_groups > 1) or (group_topk and group_topk > 1):
+            assert topk_replay_indices is None
             return group_limited_topk(
                 scores=scores,
                 topk=topk,
@@ -701,14 +702,17 @@ def topk_routing_with_score_function(
                 num_groups=num_groups,
                 group_topk=group_topk,
             )
+        elif topk_replay_indices is not None:
+            topk_scores = torch.gather(scores, dim=1, index=topk_replay_indices)
+            return topk_scores, topk_replay_indices
         else:
             return torch.topk(scores, k=topk, dim=1)
 
-    def compute_topk(scores, topk, num_groups=None, group_topk=None):
+    def compute_topk(scores, topk, num_groups=None, group_topk=None, topk_replay_indices=None):
         # Default behavior if no replay is active
 
         if router_replay is None:
-            return _compute_topk(scores, topk, num_groups=num_groups, group_topk=group_topk)
+            return _compute_topk(scores, topk, num_groups=num_groups, group_topk=group_topk, topk_replay_indices=topk_replay_indices)
         else:
             return router_replay.get_replay_topk(
                 scores, topk, num_groups, group_topk, _compute_topk
