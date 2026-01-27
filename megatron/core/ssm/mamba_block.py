@@ -131,7 +131,9 @@ class MambaStack(MegatronModule):
             pp_layer_offset, self.layer_type_list = self._select_layers_for_pipeline_parallel(
                 self.layer_type_list
             )
+
         # Build main decoder layers using shared layer builder
+        moe_layer_idx = 0
         self.layers = nn.ModuleList()
         for i, layer_type in enumerate(self.layer_type_list):
             fp8_init_context = get_fp8_context(self.config, i + pp_layer_offset, is_init=True)
@@ -170,6 +172,8 @@ class MambaStack(MegatronModule):
                         layer_number=i + 1,
                         pg_collection=pg_collection,
                     )
+                    layer.set_moe_layer_number(moe_layer_idx)
+                    moe_layer_idx += 1
                 else:
                     assert False, "unexpected layer_type"
             self.layers.append(layer)
