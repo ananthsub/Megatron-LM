@@ -3,7 +3,7 @@
 import functools
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 
