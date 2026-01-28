@@ -107,7 +107,7 @@ class Router(ABC, MegatronModule):
         return logits
 
     @abstractmethod
-    def _routing(self, logits: torch.Tensor, moe_routing_replay_data: Optional[Any]):
+    def _routing(self, logits: torch.Tensor, moe_topk_routing_replay_indices: Optional[Any]):
         """Routing function.
 
         Args:
@@ -685,7 +685,7 @@ class TopKRouter(Router):
             self.global_tokens_per_expert.zero_()
             self.ga_steps.zero_()
 
-    def forward(self, input: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_routing_replay_data: Optional[Any] = None):
+    def forward(self, input: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_topk_routing_replay_indices: Optional[Any] = None):
         """
         Forward pass of the router.
 
@@ -695,6 +695,14 @@ class TopKRouter(Router):
                                                    Shape [seq_length, bsz]. True for valid tokens,
                                                    False for padding tokens. Defaults to None.
         """
+        if moe_topk_routing_replay_indices is not None:
+            if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
+                print(f"DEBUG: TopKRouter.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            else:
+                print(f"DEBUG: TopKRouter.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+        else:
+            print(f"DEBUG: TopKRouter.forward: moe_topk_routing_replay_indices is None", flush=True)
+
         self._maintain_float32_expert_bias()
 
         # Apply input jitter

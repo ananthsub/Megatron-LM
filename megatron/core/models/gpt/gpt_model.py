@@ -483,7 +483,7 @@ class GPTModel(LanguageModule):
         packed_seq_params: PackedSeqParams = None,
         extra_block_kwargs: dict = None,
         runtime_gather_output: Optional[bool] = None,
-        moe_routing_replay_data: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[Any] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         loss_mask: Optional[Tensor] = None,
@@ -539,7 +539,7 @@ class GPTModel(LanguageModule):
             packed_seq_params=packed_seq_params,
             sequence_len_offset=sequence_len_offset,
             padding_mask=padding_mask,
-            moe_routing_replay_data=moe_routing_replay_data,
+            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
             **(extra_block_kwargs or {}),
         )
 

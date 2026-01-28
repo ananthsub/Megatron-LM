@@ -7,7 +7,7 @@
 
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
@@ -263,6 +263,7 @@ class MambaStack(MegatronModule):
         inference_params: Optional[BaseInferenceContext] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask=None,
+        moe_topk_routing_replay_indices: Optional[Any] = None,
     ):
         """
         Forward function of the MambaStack class.
@@ -330,7 +331,7 @@ class MambaStack(MegatronModule):
         outer_fp8_context = get_fp8_context(self.config) if use_outer_fp8_context else nullcontext()
 
         with outer_fp8_context:
-            for layer in self.layers:
+            for layer_type, layer in zip(self.layer_type_list, self.layers):
                 inner_fp8_context = (
                     get_fp8_context(self.config, layer.layer_number - 1)
                     if use_inner_fp8_context
@@ -346,6 +347,14 @@ class MambaStack(MegatronModule):
                             sequence_len_offset=sequence_len_offset,
                             packed_seq_params=packed_seq_params,
                             padding_mask=padding_mask,
+                        )
+                    elif layer_type == LayerSymbols.MOE:
+                        hidden_states = layer(
+                            hidden_states=hidden_states,
+                            attention_mask=attention_mask,
+                            inference_context=inference_context,
+                            packed_seq_params=packed_seq_params,
+                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
                     else:  # MambaLayer
                         hidden_states = layer(
