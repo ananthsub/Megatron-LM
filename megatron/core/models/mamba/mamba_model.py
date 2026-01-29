@@ -341,8 +341,15 @@ class MambaModel(LanguageModule):
             ).clone()
 
         if moe_topk_routing_replay_indices is not None:
-            repad_row = torch.arange(0, moe_topk_routing_replay_indices.shape[-1], dtype=moe_topk_routing_replay_indices.dtype)
-            repad_mask = torch.sum(moe_topk_routing_replay_indices, dim=-1) == 0
+            repad_row = torch.arange(
+                0,
+                moe_topk_routing_replay_indices.shape[-1],
+                dtype=moe_topk_routing_replay_indices.dtype,
+                device=moe_topk_routing_replay_indices.device,
+            )
+            repad_mask = (torch.sum(moe_topk_routing_replay_indices, dim=-1) == 0).to(
+                device=moe_topk_routing_replay_indices.device
+            )
             moe_topk_routing_replay_indices[repad_mask] = repad_row
 
         if isinstance(decoder_input, Tensor):
