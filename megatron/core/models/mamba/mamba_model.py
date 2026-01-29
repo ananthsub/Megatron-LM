@@ -8,7 +8,7 @@ from torch import Tensor
 from megatron.core import tensor_parallel
 from megatron.core.config_logger import has_config_logger_enabled, log_config_to_disk
 from megatron.core.inference.contexts import BaseInferenceContext
-from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding, LanguageModelPartitioning
+from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
 from megatron.core.models.common.embeddings.rotary_pos_embedding import RotaryEmbedding
 from megatron.core.models.common.language_module.language_module import LanguageModule
 from megatron.core.packed_seq_params import PackedSeqParams
@@ -139,14 +139,6 @@ class MambaModel(LanguageModule):
                 vocab_size=self.vocab_size,
                 max_sequence_length=self.max_sequence_length,
                 position_embedding_type=position_embedding_type,
-                scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
-                tp_group=self.pg_collection.tp,
-            )
-
-        if False:
-            self.partitioning = LanguageModelPartitioning(
-                config=self.config,
-                max_sequence_length=self.max_sequence_length,
                 scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
                 tp_group=self.pg_collection.tp,
             )
@@ -334,7 +326,6 @@ class MambaModel(LanguageModule):
             self.config.sequence_parallel and
             self.scatter_embedding_sequence_parallel
         ):
-            # moe_topk_routing_replay_indices = self.partitioning(moe_topk_routing_replay_indices)
             moe_topk_routing_replay_indices = moe_topk_routing_replay_indices.transpose(0, 1).contiguous()
             moe_topk_routing_replay_indices = tensor_parallel.scatter_to_sequence_parallel_region(
                 moe_topk_routing_replay_indices, group=self.pg_collection.tp,
