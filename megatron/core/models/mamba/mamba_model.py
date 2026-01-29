@@ -1,5 +1,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
+import logging
 from typing import Any, Literal, Optional
 
 from torch import Tensor
@@ -7,7 +8,7 @@ from torch import Tensor
 from megatron.core import tensor_parallel
 from megatron.core.config_logger import has_config_logger_enabled, log_config_to_disk
 from megatron.core.inference.contexts import BaseInferenceContext
-from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
+from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding, LanguageModelPartitioning
 from megatron.core.models.common.embeddings.rotary_pos_embedding import RotaryEmbedding
 from megatron.core.models.common.language_module.language_module import LanguageModule
 from megatron.core.packed_seq_params import PackedSeqParams
@@ -28,6 +29,9 @@ from megatron.core.utils import (
     deprecate_inference_params,
     is_using_quantization_scales,
 )
+
+logger = logging.getLogger(__name__)
+
 
 
 class MambaModel(LanguageModule):
@@ -108,6 +112,7 @@ class MambaModel(LanguageModule):
         self.parallel_output = parallel_output
         self.share_embeddings_and_output_weights = share_embeddings_and_output_weights
         self.position_embedding_type = position_embedding_type
+        self.scatter_embedding_sequence_parallel = scatter_embedding_sequence_parallel
         self.vp_stage = vp_stage
 
         # Parse unified pattern to extract main and MTP components
@@ -138,6 +143,14 @@ class MambaModel(LanguageModule):
                 tp_group=self.pg_collection.tp,
             )
 
+        if False:
+            self.partitioning = LanguageModelPartitioning(
+                config=self.config,
+                max_sequence_length=self.max_sequence_length,
+                scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
+                tp_group=self.pg_collection.tp,
+            )
+
         if self.position_embedding_type == 'rope':
             self.rotary_pos_emb = RotaryEmbedding(
                 kv_channels=self.config.kv_channels,
@@ -159,6 +172,7 @@ class MambaModel(LanguageModule):
             dtype=config.params_dtype,
             pg_collection=self.pg_collection,
         )
+        print(f"DEBUG: MambaModel: decoder is a {type(self.decoder).__name__}", flush=True)
 
         moe_layer_idx = 0
         for layer_name, layer in self.decoder.named_modules():
@@ -245,6 +259,21 @@ class MambaModel(LanguageModule):
 
         It either returns the Loss values if labels are given or the final hidden units
         """
+        if False and moe_topk_routing_replay_indices is not None:
+            if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
+                print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            else:
+                print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+        elif False:
+            print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices is None", flush=True)
+
+        if isinstance(input_ids, Tensor):
+            print(f"DEBUG: MambaModel.forward: input ids     shape = {input_ids.shape} dtype = {input_ids.dtype}", flush=True)
+        if isinstance(decoder_input, Tensor):
+            print(f"DEBUG: MambaModel.forward: og dc input   shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+        if isinstance(moe_topk_routing_replay_indices, Tensor):
+            print(f"DEBUG: MambaModel.forward: og moe topk   shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+
         # If decoder_input is provided (not None), then input_ids and position_ids are ignored.
         # Otherwise, apply embedding layer on input_ids and position_ids to get decoder_input.
 
@@ -299,6 +328,31 @@ class MambaModel(LanguageModule):
         #   force the attention mask passed to the model in inference mode to
         #   be None, so this assert will succeed.
         # assert attention_mask is None, "The attention mask is ignored and should be set to None"
+
+        if (
+            moe_topk_routing_replay_indices is not None and
+            self.config.sequence_parallel and
+            self.scatter_embedding_sequence_parallel
+        ):
+            # moe_topk_routing_replay_indices = self.partitioning(moe_topk_routing_replay_indices)
+            moe_topk_routing_replay_indices = moe_topk_routing_replay_indices.transpose(0, 1).contiguous()
+            moe_topk_routing_replay_indices = tensor_parallel.scatter_to_sequence_parallel_region(
+                moe_topk_routing_replay_indices, group=self.pg_collection.tp,
+            ).clone()
+
+        if moe_topk_routing_replay_indices is not None:
+            repad_row = torch.arange(0, moe_topk_routing_replay_indices.shape[-1], dtype=moe_topk_routing_replay_indices.dtype)
+            repad_mask = torch.sum(moe_topk_routing_replay_indices, dim=-1) == 0
+            moe_topk_routing_replay_indices[repad_mask] = repad_row
+
+        if isinstance(decoder_input, Tensor):
+            print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+        if isinstance(moe_topk_routing_replay_indices, Tensor):
+            print(f"DEBUG: MambaModel.forward: moe topk      shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+        elif moe_topk_routing_replay_indices is not None:
+            print(f"DEBUG: MambaModel.forward: moe topk       type = {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+        else:
+            print(f"DEBUG: MambaModel.forward: moe topk         is None", flush=True)
 
         # Run decoder.
         hidden_states = self.decoder(

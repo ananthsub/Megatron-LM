@@ -176,7 +176,13 @@ class MambaStack(MegatronModule):
                     moe_layer_idx += 1
                 else:
                     assert False, "unexpected layer_type"
+            print(f"DEBUG: MambaStack: layer offset = {i} type = {layer_type} is a {type(layer).__name__}", flush=True)
             self.layers.append(layer)
+
+        self.num_moe_layers = moe_layer_idx
+        for i, layer_type in enumerate(self.layer_type_list):
+            if layer_type == LayerSymbols.MOE:
+                self.layers[i].set_num_moe_layers(self.num_moe_layers)
 
         # Required for activation recomputation
         self.num_layers_per_pipeline_rank = len(self.layers)
@@ -282,6 +288,13 @@ class MambaStack(MegatronModule):
         Returns:
             Tensor: the output tensor.
         """
+        if moe_topk_routing_replay_indices is not None:
+            if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
+                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            else:
+                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+        else:
+            print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is None", flush=True)
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
@@ -347,6 +360,7 @@ class MambaStack(MegatronModule):
                             sequence_len_offset=sequence_len_offset,
                             packed_seq_params=packed_seq_params,
                             padding_mask=padding_mask,
+                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
                     elif layer_type == LayerSymbols.MOE:
                         hidden_states = layer(

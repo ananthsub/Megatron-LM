@@ -519,6 +519,12 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             return True
         return None
 
+    def set_num_moe_layers(self, num_moe_layers: int) -> Optional[bool]:
+        if self.is_moe_layer:
+            self.num_moe_layers = num_moe_layers
+            self.mlp.set_num_moe_layers(num_moe_layers)
+        return None
+
     def forward(self, *args, **kwargs):
         """
         Perform a forward pass through the transformer layer.
@@ -527,11 +533,19 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         self-attention, cross-attention (if applicable), and feed-forward operations.
         """
         hidden_states, context = self._forward_attention(*args, **kwargs)
+        moe_topk_routing_replay_indices = kwargs.get("moe_topk_routing_replay_indices", None)
+        if moe_topk_routing_replay_indices is not None:
+            if isinstance(moe_topk_routing_replay_indices, Tensor):
+                print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            else:
+                print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+        else:
+            print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is None", flush=True)
         output = self._forward_mlp(
             hidden_states,
             kwargs.get("inference_context", None),
             padding_mask=kwargs.get("padding_mask", None),
-            moe_topk_routing_replay_indices=kwargs.get("moe_topk_routing_replay_indices", None),
+            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
         )
         return output, context
 

@@ -48,6 +48,7 @@ class Router(ABC, MegatronModule):
         self.moe_aux_loss_func = None
         self.layer_number = None
         self.moe_layer_idx = None
+        self.num_moe_layers = None
         self.is_mtp_layer = is_mtp_layer
         self.tp_group = pg_collection.tp
         self.cp_group = pg_collection.cp
@@ -107,7 +108,7 @@ class Router(ABC, MegatronModule):
         return logits
 
     @abstractmethod
-    def _routing(self, logits: torch.Tensor, moe_topk_routing_replay_indices: Optional[Any]):
+    def _routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, topk_routing_replay_indices: Optional[Any] = None):
         """Routing function.
 
         Args:
@@ -136,6 +137,9 @@ class Router(ABC, MegatronModule):
     def set_moe_layer_number(self, moe_layer_idx: int):
         """Set the MoE layer number for the router."""
         self.moe_layer_idx = moe_layer_idx
+
+    def set_num_moe_layers(self, num_moe_layers: int):
+        self.num_moe_layers = num_moe_layers
 
 
 class TopKRouter(Router):
@@ -588,7 +592,7 @@ class TopKRouter(Router):
                     routing_map = routing_map & (~padding_mask)
                 self.local_tokens_per_expert += routing_map.sum(dim=0)
 
-    def _routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_topk_routing_replay_indices: Optional[Any] = None):
+    def _routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, topk_routing_replay_indices: Optional[Any] = None):
         """Top-k routing function
 
         Args:
@@ -602,8 +606,19 @@ class TopKRouter(Router):
             routing_map (torch.Tensor): The mapping of token to experts assignment,
                 with shape [num_tokens, num_experts].
         """
+        print(f"DEBUG: TopKRouter._routing: orig logits           shape = {logits.shape} dtype = {logits.dtype}", flush=True)
         seq_length, bsz = logits.shape[:2]
         logits = logits.view(-1, self.config.num_moe_experts)
+        print(f"DEBUG: TopKRouter._routing: view logits           shape = {logits.shape} dtype = {logits.dtype}", flush=True)
+
+        if topk_routing_replay_indices is not None:
+            print(f"DEBUG: TopKRouter._routing: orig replay indices   shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
+            assert seq_length == topk_routing_replay_indices.shape[0]
+            assert bsz == topk_routing_replay_indices.shape[1]
+            topk_routing_replay_indices = topk_routing_replay_indices.view(-1, self.num_moe_layers, self.topk)[:,self.moe_layer_idx,:]
+            print(f"DEBUG: TopKRouter._routing: view replay indices   shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
+        else:
+            topk_routing_replay_indices = None
 
         # Flatten padding_mask to [num_tokens] if provided
         if padding_mask is not None:
@@ -614,7 +629,7 @@ class TopKRouter(Router):
 
         # Calculate probs and routing_map for token dispatching
         if self.routing_type == "sinkhorn":
-            assert moe_topk_routing_replay_indices is None
+            assert topk_routing_replay_indices is None
             probs, routing_map = self.sinkhorn_load_balancing(logits)
             topk_routing_indices = None
         else:
@@ -629,8 +644,34 @@ class TopKRouter(Router):
                 expert_bias=self.expert_bias,
                 fused=self.config.moe_router_fusion,
                 router_replay=self.router_replay,
-                topk_routing_replay_indices=moe_topk_routing_replay_indices,
+                topk_routing_replay_indices=topk_routing_replay_indices,
             )
+
+        if topk_routing_replay_indices is not None:
+            noreplay_probs, routing_noreplay_map, topk_routing_noreplay_indices = topk_routing_with_score_function(
+                logits,
+                self.topk,
+                use_pre_softmax=self.config.moe_router_pre_softmax,
+                num_groups=self.config.moe_router_num_groups,
+                group_topk=self.config.moe_router_group_topk,
+                scaling_factor=self.config.moe_router_topk_scaling_factor,
+                score_function=self.score_function,
+                expert_bias=self.expert_bias,
+                fused=self.config.moe_router_fusion,
+            )
+        else:
+            noreplay_probs = None
+            routing_noreplay_map = None
+            topk_routing_noreplay_indices = None
+
+        print(f"DEBUG: TopKRouter._routing: input logits          shape = {logits.shape} dtype = {logits.dtype}", flush=True)
+        print(f"DEBUG: TopKRouter._routing: output probs          shape = {probs.shape} dtype = {probs.dtype}", flush=True)
+        print(f"DEBUG: TopKRouter._routing: output map            shape = {routing_map.shape} dtype = {routing_map.dtype}", flush=True)
+        print(f"DEBUG: TopKRouter._routing: topk routing indices  shape = {topk_routing_indices.shape} dtype = {topk_routing_indices.dtype}", flush=True)
+        if topk_routing_replay_indices is not None:
+            print(f"DEBUG: TopKRouter._routing: output noreplay probs shape = {noreplay_probs.shape} dtype = {noreplay_probs.dtype}", flush=True)
+            print(f"DEBUG: TopKRouter._routing: output noreplay map   shape = {routing_noreplay_map.shape} dtype = {routing_noreplay_map.dtype}", flush=True)
+            print(f"DEBUG: TopKRouter._routing: topk noreplay indices shape = {topk_routing_noreplay_indices.shape} dtype = {topk_routing_noreplay_indices.dtype}", flush=True)
 
         # Apply token dropping to probs and routing_map.
         if self.config.moe_expert_capacity_factor is not None:
@@ -713,7 +754,7 @@ class TopKRouter(Router):
             # Apply force load balancing with random logits for benchmark
             logits = apply_random_logits(logits)
 
-        probs, routing_map, topk_routing_indices = self._routing(logits, padding_mask=padding_mask, moe_routing_replay_data^moe_routing_replay_data)
+        probs, routing_map, topk_routing_indices = self._routing(logits, padding_mask=padding_mask, topk_routing_replay_indices=moe_topk_routing_replay_indices)
 
         return probs, routing_map
 

@@ -135,6 +135,10 @@ class BaseMoELayer(MegatronModule, ABC):
         self.moe_layer_idx = moe_layer_idx
         self.router.set_moe_layer_number(moe_layer_idx)
 
+    def set_num_moe_layers(self, num_moe_layers: int):
+        self.num_moe_layers = num_moe_layers
+        self.router.set_num_moe_layers(num_moe_layers)
+
 
 class MoELayer(BaseMoELayer):
     """Mixture of Experts layer.
@@ -404,11 +408,20 @@ class MoELayer(BaseMoELayer):
 
         # MoE forward: route -> dispatch -> compute -> combine
         def custom_forward(hidden_states, intermediate_tensors=None, padding_mask=None, moe_topk_routing_replay_indices=None):
+            print(f"DEBUG: MoELayer.forward: custom forward: hidden states   shape = {hidden_states.shape}", flush=True)
+            if moe_topk_routing_replay_indices is not None:
+                print(f"DEBUG: MoELayer.forward: custom forward: moe topk replay shape = {moe_topk_routing_replay_indices.shape}", flush=True)
             try:
                 if "route" in self.fwd_execution_map:
                     shared_expert_output = self.shared_experts_compute(hidden_states)
+                    if isinstance(shared_expert_output, torch.Tensor):
+                        print(f"DEBUG: MoELayer.forward: custom forward: shared expert   shape = {shared_expert_output.shape}", flush=True)
                     probs, routing_map = self.route(hidden_states, padding_mask, moe_topk_routing_replay_indices)
+                    print(f"DEBUG: MoELayer.forward: custom forward: routed probs    shape = {probs.shape}", flush=True)
+                    print(f"DEBUG: MoELayer.forward: custom forward: routing map     shape = {routing_map.shape}", flush=True)
                     hidden_states, probs = self.preprocess(hidden_states, probs, routing_map)
+                    print(f"DEBUG: MoELayer.forward: custom forward: proc hidden     shape = {hidden_states.shape}", flush=True)
+                    print(f"DEBUG: MoELayer.forward: custom forward: proc probs      shape = {probs.shape}", flush=True)
 
                     if intermediate_tensors is not None:
                         return hidden_states, probs, shared_expert_output
