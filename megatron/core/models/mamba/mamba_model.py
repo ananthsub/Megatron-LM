@@ -331,7 +331,7 @@ class MambaModel(LanguageModule):
                 moe_topk_routing_replay_indices, group=self.pg_collection.tp,
             ).clone()
 
-        if moe_topk_routing_replay_indices is not None:
+        if False and moe_topk_routing_replay_indices is not None:
             repad_row = torch.arange(
                 0,
                 moe_topk_routing_replay_indices.shape[-1],

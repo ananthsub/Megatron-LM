@@ -651,6 +651,8 @@ def topk_routing_with_score_function(
               indicating which experts were selected for each token. True values represent
               the selected experts.
     """
+    print(f"DEBUG: topk_routing_replay_indices: topk = {topk} num groups = {num_groups} group topk = {group_topk}", flush=True)
+
     assert logits.dim() == 2, f"Expected 2D logits [num_tokens, num_experts], got {logits.dim()}."
     num_tokens, num_experts = logits.shape
     if fused:
