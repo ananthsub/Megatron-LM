@@ -251,14 +251,6 @@ class MambaModel(LanguageModule):
 
         It either returns the Loss values if labels are given or the final hidden units
         """
-        if False and moe_topk_routing_replay_indices is not None:
-            if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
-                print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
-            else:
-                print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
-        elif False:
-            print(f"DEBUG: MambaModel.forward: moe_topk_routing_replay_indices is None", flush=True)
-
         if isinstance(input_ids, Tensor):
             print(f"DEBUG: MambaModel.forward: input ids     shape = {input_ids.shape} dtype = {input_ids.dtype}", flush=True)
         if isinstance(decoder_input, Tensor):
@@ -330,18 +322,6 @@ class MambaModel(LanguageModule):
             moe_topk_routing_replay_indices = tensor_parallel.scatter_to_sequence_parallel_region(
                 moe_topk_routing_replay_indices, group=self.pg_collection.tp,
             ).clone()
-
-        if False and moe_topk_routing_replay_indices is not None:
-            repad_row = torch.arange(
-                0,
-                moe_topk_routing_replay_indices.shape[-1],
-                dtype=moe_topk_routing_replay_indices.dtype,
-                device=moe_topk_routing_replay_indices.device,
-            )
-            repad_mask = (torch.sum(moe_topk_routing_replay_indices, dim=-1) == 0).to(
-                device=moe_topk_routing_replay_indices.device
-            )
-            moe_topk_routing_replay_indices[repad_mask] = repad_row
 
         if isinstance(decoder_input, Tensor):
             print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
