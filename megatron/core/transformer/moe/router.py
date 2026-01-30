@@ -729,7 +729,7 @@ class TopKRouter(Router):
             log_item["topk_routing_indices"] = topk_routing_indices.tolist() if topk_routing_indices is not None else None
 
             with open(debug_log_path, "a") as log_file:
-                print(json.dumps(log_item), file=log_file, flush=True)
+                print(json.dumps(log_item, separators=(",", ":")), file=log_file, flush=True)
 
         print(f"DEBUG: TopKRouter._routing: input logits          shape = {logits.shape} dtype = {logits.dtype}", flush=True)
         print(f"DEBUG: TopKRouter._routing: output probs          shape = {probs.shape} dtype = {probs.dtype}", flush=True)
