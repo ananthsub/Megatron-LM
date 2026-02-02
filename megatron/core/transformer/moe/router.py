@@ -637,17 +637,18 @@ class TopKRouter(Router):
         # Apply Z-Loss
         logits = self.apply_z_loss(logits, padding_mask=padding_mask)
 
+        noreplay_probs = None
+        routing_noreplay_map = None
+        topk_routing_noreplay_indices = None
+
+        probs = None
+        routing_map = None
+        topk_routing_indices = None
+
         # Calculate probs and routing_map for token dispatching
         if self.routing_type == "sinkhorn":
             assert topk_routing_replay_indices is None
-
-            noreplay_probs = None
-            routing_noreplay_map = None
-            topk_routing_noreplay_indices = None
-
             probs, routing_map = self.sinkhorn_load_balancing(logits)
-            topk_routing_indices = None
-
         else:
             noreplay_probs, routing_noreplay_map, topk_routing_noreplay_indices = topk_routing_with_score_function(
                 logits,
@@ -687,6 +688,10 @@ class TopKRouter(Router):
                 router_replay=self.router_replay,
                 topk_routing_replay_indices=topk_routing_replay_indices,
             )
+        else:
+            probs = noreplay_probs
+            routing_map = routing_noreplay_map
+            topk_routing_indices = topk_routing_noreplay_indices
 
         debug_log_dir = os.environ.get("NRL_MCORE_DEBUG_LOG_DIR", None)
         if debug_log_dir is not None:
@@ -734,7 +739,8 @@ class TopKRouter(Router):
         print(f"DEBUG: TopKRouter._routing: input logits          shape = {logits.shape} dtype = {logits.dtype}", flush=True)
         print(f"DEBUG: TopKRouter._routing: output probs          shape = {probs.shape} dtype = {probs.dtype}", flush=True)
         print(f"DEBUG: TopKRouter._routing: output map            shape = {routing_map.shape} dtype = {routing_map.dtype}", flush=True)
-        print(f"DEBUG: TopKRouter._routing: topk routing indices  shape = {topk_routing_indices.shape} dtype = {topk_routing_indices.dtype}", flush=True)
+        if topk_routing_indices is not None:
+            print(f"DEBUG: TopKRouter._routing: topk routing indices  shape = {topk_routing_indices.shape} dtype = {topk_routing_indices.dtype}", flush=True)
         if topk_routing_replay_indices is not None:
             print(f"DEBUG: TopKRouter._routing: output noreplay probs shape = {noreplay_probs.shape} dtype = {noreplay_probs.dtype}", flush=True)
             print(f"DEBUG: TopKRouter._routing: output noreplay map   shape = {routing_noreplay_map.shape} dtype = {routing_noreplay_map.dtype}", flush=True)
