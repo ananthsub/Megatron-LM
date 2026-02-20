@@ -670,7 +670,9 @@ class TopKRouter(Router):
                 topk_routing_replay_repad_mask = (torch.sum(topk_routing_replay_indices, dim=-1) == 0).to(
                     device=topk_routing_replay_indices.device
                 )
-                topk_routing_replay_indices_clone = topk_routing_replay_indices.clone()
+                topk_routing_replay_indices_clone = topk_routing_replay_indices.clone().to(
+                    dtype=topk_routing_noreplay_indices.dtype
+                )
                 topk_routing_replay_indices_clone[topk_routing_replay_repad_mask] = (
                     topk_routing_noreplay_indices[topk_routing_replay_repad_mask]
                 )
