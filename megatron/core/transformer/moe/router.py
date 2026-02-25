@@ -662,6 +662,7 @@ class TopKRouter(Router):
                 fused=self.config.moe_router_fusion,
             )
 
+        topk_routing_replay_indices_premask = topk_routing_replay_indices
         if topk_routing_replay_indices is not None:
             # NB: only do non-replay re-padding when K >= 2 because otherwise
             # can't distinguish padding rows.
@@ -732,7 +733,9 @@ class TopKRouter(Router):
             }
 
             log_item["topk_routing_noreplay_indices"] = topk_routing_noreplay_indices.tolist() if topk_routing_noreplay_indices is not None else None
-            log_item["topk_routing_replay_indices"] = topk_routing_replay_indices.tolist() if topk_routing_replay_indices is not None else None
+            # NB: logging the full pre-masked routing replay indices.
+            # log_item["topk_routing_replay_indices"] = topk_routing_replay_indices.tolist() if topk_routing_replay_indices is not None else None
+            log_item["topk_routing_replay_indices"] = topk_routing_replay_indices_premask.tolist() if topk_routing_replay_indices_premask is not None else None
             log_item["topk_routing_indices"] = topk_routing_indices.tolist() if topk_routing_indices is not None else None
 
             with open(debug_log_path, "a") as log_file:
