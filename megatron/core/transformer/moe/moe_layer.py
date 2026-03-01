@@ -188,6 +188,7 @@ class MoELayer(BaseMoELayer):
 
         # Initialize latent projections.
         if self.config.moe_latent_size:
+            print(f"DEBUG: MoELayer: moe latent size = {self.config.moe_latent_size} hidden size = {self.config.hidden_size}", flush=True)
             assert HAVE_TE, "TransformerEngine is required for MoE latent projections."
             self.fc1_latent_proj = TELinear(
                 self.config.hidden_size,
@@ -211,6 +212,8 @@ class MoELayer(BaseMoELayer):
                 skip_weight_param_allocation=False,
                 is_expert=False,
             )
+        else:
+            print(f"DEBUG: MoELayer: no latent moe", flush=True)
 
         # Initialize token dispatcher
         if config.moe_token_dispatcher_type == "allgather":
@@ -249,6 +252,7 @@ class MoELayer(BaseMoELayer):
 
         # Initialize shared experts
         if self.use_shared_expert:
+            print(f"DEBUG: MoELayer: use shared experts", flush=True)
             self.shared_experts = build_module(
                 self.submodules.shared_experts,
                 config=self.config,
@@ -257,6 +261,8 @@ class MoELayer(BaseMoELayer):
             )
             if self.shared_expert_overlap:
                 self.token_dispatcher.set_shared_experts(self.shared_experts)
+        else:
+            print(f"DEBUG: MoELayer: no shared experts", flush=True)
 
         # Cudagraph tensor store for resuming the forward pass from the end of the cudagraph.
         self.cudagraph_tensor_store = MoECudaGraphTensorStore()
