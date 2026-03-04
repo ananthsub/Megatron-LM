@@ -679,7 +679,7 @@ def topk_routing_with_score_function(
         topk: int,
         num_groups: Optional[int] = None,
         group_topk: Optional[int] = None,
-        topk_replay_indices = None,
+        topk_replay_indices: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute the top-k indices for the given scores.
 
@@ -711,14 +711,18 @@ def topk_routing_with_score_function(
             return torch.topk(scores, k=topk, dim=1)
 
     def compute_topk(scores, topk, num_groups=None, group_topk=None, topk_replay_indices=None):
-        # Default behavior if no replay is active
-
-        if router_replay is None:
-            return _compute_topk(scores, topk, num_groups=num_groups, group_topk=group_topk, topk_replay_indices=topk_replay_indices)
-        else:
+        if router_replay is not None:
             return router_replay.get_replay_topk(
                 scores, topk, num_groups, group_topk, _compute_topk
             )
+        # Default behavior if no replay is active
+        return _compute_topk(
+            scores,
+            topk=topk,
+            num_groups=num_groups,
+            group_topk=group_topk,
+            topk_replay_indices=topk_replay_indices,
+        )
 
     if score_function == "softmax":
         if use_pre_softmax:
