@@ -7,7 +7,7 @@
 
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn

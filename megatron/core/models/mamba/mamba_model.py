@@ -1,7 +1,7 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 import logging
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 from torch import Tensor
 

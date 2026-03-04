@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, Union
+from typing import Optional, Protocol, Union
 
 import torch
 
