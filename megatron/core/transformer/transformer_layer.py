@@ -523,6 +523,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         if self.is_moe_layer:
             self.num_moe_layers = num_moe_layers
             self.mlp.set_num_moe_layers(num_moe_layers)
+            return True
         return None
 
     def forward(self, *args, **kwargs):
@@ -760,7 +761,8 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
                         tensor_parallel.random.get_cuda_rng_tracker,
                         self.pg_collection.tp,
                         pre_mlp_layernorm_output,
-                        moe_topk_routing_replay_indices,
+                        padding_mask=padding_mask,
+                        moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                     )
                 else:
                     mlp_output_with_bias = te_checkpoint(
@@ -769,6 +771,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
                         tensor_parallel.random.get_cuda_rng_tracker,
                         self.pg_collection.tp,
                         pre_mlp_layernorm_output,
+                        padding_mask=padding_mask,
                     )
             elif self.is_moe_layer:
                 mlp_output_with_bias = tensor_parallel.checkpoint(
@@ -789,7 +792,6 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
                     pre_mlp_layernorm_output,
                 )
         elif should_chunk_mlp_for_prefill:
-            # TODO(pjin)
             assert not self.is_moe_layer or moe_topk_routing_replay_indices is None
 
             # Chunk input along sequence dimension
@@ -805,7 +807,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             bias_output = torch.stack(bias_chunks, dim=0).sum(dim=0) if bias_chunks else None
             mlp_output_with_bias = (mlp_output, bias_output)
         elif self.is_moe_layer:
-            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output, moe_topk_routing_replay_indices)
+            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output, padding_mask=padding_mask, moe_topk_routing_replay_indices=moe_topk_routing_replay_indices)
         else:
             if using_fused_tp_inference_kernel:
                 # Set the residual for fused reduce-scatter + add + layer-norm + all-gather
