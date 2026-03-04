@@ -783,11 +783,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
                 )
             else:
                 mlp_output_with_bias = tensor_parallel.checkpoint(
-                    functools.partial(
-                        self.mlp,
-                        padding_mask=padding_mask,
-                        moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
-                    ),
+                    functools.partial(self.mlp, padding_mask=padding_mask),
                     False,
                     pre_mlp_layernorm_output,
                 )
