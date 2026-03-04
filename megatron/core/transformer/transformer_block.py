@@ -452,9 +452,9 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         rotary_pos_emb: Tensor,
         attention_bias: Tensor,
         packed_seq_params: PackedSeqParams,
-        moe_topk_routing_replay_indices: Optional[Any],
         use_inner_quantization_context: bool,
         padding_mask: Optional[Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ):
         """Forward method with activation checkpointing."""
 
@@ -626,7 +626,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         dynamic_inference_decode_only: Optional[bool] = None,
@@ -735,9 +735,9 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                     rotary_pos_emb=rotary_pos_emb,
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
-                    moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                     use_inner_quantization_context=use_inner_quantization_context,
                     padding_mask=padding_mask,
+                    moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                 )
             else:
                 for l_no, layer in enumerate(self.layers):

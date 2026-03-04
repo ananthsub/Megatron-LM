@@ -269,7 +269,7 @@ class MambaStack(MegatronModule):
         inference_params: Optional[BaseInferenceContext] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask=None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ):
         """
         Forward function of the MambaStack class.

@@ -565,7 +565,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
         *,
         inference_params: Optional[Any] = None,
     ):

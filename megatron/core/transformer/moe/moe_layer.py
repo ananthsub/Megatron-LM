@@ -268,7 +268,7 @@ class MoELayer(BaseMoELayer):
         self.fwd_execution_map = ["route", "expert_compute", "postprocess"]
 
     @maybe_skip_or_early_return_by_cudagraph("route")
-    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_topk_routing_replay_indices: Optional[Any] = None):
+    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_topk_routing_replay_indices: Optional[torch.Tensor] = None):
         """Compute token routing for preprocessing.
 
         This method uses the router to determine which experts to send each token to,
@@ -384,7 +384,7 @@ class MoELayer(BaseMoELayer):
         hidden_states: torch.Tensor,
         intermediate_tensors=None,
         padding_mask: Optional[torch.Tensor] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[torch.Tensor] = None,
     ):
         """Forward pass for the MoE layer.
 

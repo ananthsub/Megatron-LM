@@ -618,7 +618,7 @@ def topk_routing_with_score_function(
     expert_bias: Optional[torch.Tensor] = None,
     fused: bool = False,
     router_replay: Optional['RouterReplay'] = None,
-    topk_routing_replay_indices: Optional[Any] = None,
+    topk_routing_replay_indices: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 ):
     """Compute the routing probabilities and map for top-k selection with score function.
@@ -712,13 +712,15 @@ def topk_routing_with_score_function(
 
     def compute_topk(scores, topk, num_groups=None, group_topk=None, topk_replay_indices=None):
         if router_replay is not None:
+            # NB: R2 and R3 are mutually exclusive.
+            assert topk_replay_indices is None
             return router_replay.get_replay_topk(
                 scores, topk, num_groups, group_topk, _compute_topk
             )
         # Default behavior if no replay is active
         return _compute_topk(
             scores,
-            topk=topk,
+            topk,
             num_groups=num_groups,
             group_topk=group_topk,
             topk_replay_indices=topk_replay_indices,

@@ -483,11 +483,11 @@ class GPTModel(LanguageModule):
         packed_seq_params: PackedSeqParams = None,
         extra_block_kwargs: dict = None,
         runtime_gather_output: Optional[bool] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         loss_mask: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ) -> Tensor:
         """Forward function of the GPT Model This function passes the input tensors
         through the embedding layer, and then the decoder and finally into the post

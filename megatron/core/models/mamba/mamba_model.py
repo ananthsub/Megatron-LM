@@ -243,7 +243,7 @@ class MambaModel(LanguageModule):
         loss_mask: Optional[Tensor] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask: Optional[Tensor] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ) -> Tensor:
         """Forward function of the Mamba model. This function passes the input tensors
         through the embedding layer, and then the decoder and finally into the post

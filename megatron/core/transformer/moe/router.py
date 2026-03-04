@@ -602,7 +602,12 @@ class TopKRouter(Router):
                     routing_map = routing_map & (~padding_mask)
                 self.local_tokens_per_expert += routing_map.sum(dim=0)
 
-    def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, topk_routing_replay_indices: Optional[Any] = None):
+    def routing(
+        self,
+        logits: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None,
+        topk_routing_replay_indices: Optional[torch.Tensor] = None,
+    ):
         """Top-k routing function
 
         Args:
@@ -804,7 +809,12 @@ class TopKRouter(Router):
             self.global_tokens_per_expert.zero_()
             self.ga_steps.zero_()
 
-    def forward(self, input: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, topk_routing_replay_indices: Optional[Any] = None):
+    def forward(
+        self,
+        input: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None,
+        topk_routing_replay_indices: Optional[torch.Tensor] = None,
+    ):
         """
         Forward pass of the router.
 
