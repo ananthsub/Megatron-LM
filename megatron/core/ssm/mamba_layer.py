@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -106,7 +106,6 @@ class MambaLayer(GraphableMegatronModule):
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
-        moe_topk_routing_replay_indices: Optional[Any] = None,
     ):
         """
         Perform a forward pass through the Mamba layer.
@@ -135,17 +134,9 @@ class MambaLayer(GraphableMegatronModule):
         hidden_states = hidden_states.to(dtype=self.config.params_dtype)
         hidden_states = self.norm(hidden_states)
 
-        if moe_topk_routing_replay_indices is not None:
-            mixer_out_with_bias = self.mixer(
-                hidden_states,
-                inference_context=inference_context,
-                packed_seq_params=packed_seq_params,
-                moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
-            )
-        else:
-            mixer_out_with_bias = self.mixer(
-                hidden_states, inference_context=inference_context, packed_seq_params=packed_seq_params
-            )
+        mixer_out_with_bias = self.mixer(
+            hidden_states, inference_context=inference_context, packed_seq_params=packed_seq_params
+        )
 
         with self.bias_dropout_add_exec_handler():
             hidden_states = self.mamba_bda(
