@@ -803,7 +803,11 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             bias_output = torch.stack(bias_chunks, dim=0).sum(dim=0) if bias_chunks else None
             mlp_output_with_bias = (mlp_output, bias_output)
         elif self.is_moe_layer:
-            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output, padding_mask=padding_mask, moe_topk_routing_replay_indices=moe_topk_routing_replay_indices)
+            mlp_output_with_bias = self.mlp(
+                pre_mlp_layernorm_output,
+                padding_mask=padding_mask,
+                moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
+            )
         else:
             if using_fused_tp_inference_kernel:
                 # Set the residual for fused reduce-scatter + add + layer-norm + all-gather
