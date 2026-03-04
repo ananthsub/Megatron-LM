@@ -362,15 +362,8 @@ class MambaStack(MegatronModule):
                             padding_mask=padding_mask,
                             moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
-                    elif layer_type == LayerSymbols.MOE:
-                        hidden_states = layer(
-                            hidden_states=hidden_states,
-                            attention_mask=attention_mask,
-                            inference_context=inference_context,
-                            packed_seq_params=packed_seq_params,
-                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
-                        )
                     else:  # MambaLayer
+                        assert layer_type != LayerSymbols.MOE
                         hidden_states = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,
