@@ -167,9 +167,11 @@ class MambaModel(LanguageModule):
         print(f"DEBUG: MambaModel: decoder is a {type(self.decoder).__name__}", flush=True)
 
         moe_layer_idx = 0
-        for layer_name, layer in self.decoder.named_modules():
-            if layer.set_moe_layer_number(moe_layer_idx):
-                moe_layer_idx += 1
+        for layer_idx, (layer_name, layer) in enumerate(self.decoder.named_modules()):
+            print(f"DEBUG: MambaModel: layer {layer_idx} {repr(layer_name)} {type(layer).__name__}", flush=True)
+            if hasattr(layer, "set_moe_layer_number"):
+                if layer.set_moe_layer_number(moe_layer_idx):
+                    moe_layer_idx += 1
 
         # MTP block - uses mtp_block_spec from mamba_stack_spec.submodules
         if self.mtp_process:
