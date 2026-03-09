@@ -620,7 +620,6 @@ def topk_routing_with_score_function(
     router_replay: Optional['RouterReplay'] = None,
     topk_routing_replay_indices: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-):
     """Compute the routing probabilities and map for top-k selection with score function.
 
     Args:
