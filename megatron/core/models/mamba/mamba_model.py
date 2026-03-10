@@ -17,6 +17,7 @@ from megatron.core.quantization.utils import get_quant_config_or_none
 from megatron.core.tensor_parallel import gather_from_sequence_parallel_region
 from megatron.core.transformer import TransformerConfig
 from megatron.core.transformer.enums import ModelType
+from megatron.core.transformer.moe.model_utils import prepare_moe_topk_routing_replay_indices
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlock,
     mtp_on_this_rank,
@@ -166,13 +167,6 @@ class MambaModel(LanguageModule):
         )
         print(f"DEBUG: MambaModel: decoder is a {type(self.decoder).__name__}", flush=True)
 
-        moe_layer_idx = 0
-        for layer_idx, (layer_name, layer) in enumerate(self.decoder.named_modules()):
-            print(f"DEBUG: MambaModel: layer {layer_idx} {repr(layer_name)} {type(layer).__name__}", flush=True)
-            if hasattr(layer, "set_moe_layer_number"):
-                if layer.set_moe_layer_number(moe_layer_idx):
-                    moe_layer_idx += 1
-
         # MTP block - uses mtp_block_spec from mamba_stack_spec.submodules
         if self.mtp_process:
             mamba_submodules = mamba_stack_spec.submodules
@@ -315,15 +309,16 @@ class MambaModel(LanguageModule):
         #   be None, so this assert will succeed.
         # assert attention_mask is None, "The attention mask is ignored and should be set to None"
 
-        if (
-            moe_topk_routing_replay_indices is not None and
-            self.config.sequence_parallel and
-            self.scatter_embedding_sequence_parallel
-        ):
-            moe_topk_routing_replay_indices = moe_topk_routing_replay_indices.transpose(0, 1).contiguous()
-            moe_topk_routing_replay_indices = tensor_parallel.scatter_to_sequence_parallel_region(
-                moe_topk_routing_replay_indices, group=self.pg_collection.tp,
-            ).clone()
+        batch_size, seq_length = input_ids.shape[:2]
+        moe_topk_routing_replay_indices = prepare_moe_topk_routing_replay_indices(
+            moe_topk_routing_replay_indices,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            sequence_parallel=self.config.sequence_parallel,
+            scatter_to_sequence_parallel=self.scatter_embedding_sequence_parallel,
+            tp_group=self.pg_collection.tp,
+            scatter_fn=tensor_parallel.scatter_to_sequence_parallel_region,
+        )
 
         if isinstance(decoder_input, Tensor):
             print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)

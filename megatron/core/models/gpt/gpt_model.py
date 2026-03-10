@@ -25,6 +25,10 @@ from megatron.core.process_groups_config import ProcessGroupCollection
 from megatron.core.quantization.utils import get_quant_config_or_none
 from megatron.core.tensor_parallel import gather_from_sequence_parallel_region
 from megatron.core.transformer.enums import CudaGraphScope, ModelType
+from megatron.core.transformer.moe.model_utils import (
+    initialize_moe_layer_metadata,
+    prepare_moe_topk_routing_replay_indices,
+)
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlock,
     mtp_on_this_rank,
@@ -122,6 +126,7 @@ class GPTModel(LanguageModule):
         self.share_embeddings_and_output_weights = share_embeddings_and_output_weights
         self.vp_stage = vp_stage
         self.disable_param_offloading = True
+        self.scatter_embedding_sequence_parallel = scatter_embedding_sequence_parallel
 
         if hasattr(self.config, 'position_embedding_type'):
             self.position_embedding_type = self.config.position_embedding_type
@@ -214,11 +219,7 @@ class GPTModel(LanguageModule):
             pg_collection=self.pg_collection,
             vp_stage=vp_stage,
         )
-
-        moe_layer_idx = 0
-        for layer_name, layer in self.decoder.named_modules():
-            if layer.set_moe_layer_number(moe_layer_idx):
-                moe_layer_idx += 1
+        self.decoder.num_moe_layers = initialize_moe_layer_metadata(self.decoder.layers)
 
         if self.mtp_process:
             self.mtp = MultiTokenPredictionBlock(
@@ -526,6 +527,17 @@ class GPTModel(LanguageModule):
         ) = preproc_output[:6]
 
         rotary_pos_cos_sin = preproc_output[6] if len(preproc_output) == 7 else None
+
+        batch_size, seq_length = input_ids.shape[:2]
+        moe_topk_routing_replay_indices = prepare_moe_topk_routing_replay_indices(
+            moe_topk_routing_replay_indices,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            sequence_parallel=self.config.sequence_parallel,
+            scatter_to_sequence_parallel=self.scatter_embedding_sequence_parallel,
+            tp_group=self.pg_collection.tp,
+            scatter_fn=tensor_parallel.scatter_to_sequence_parallel_region,
+        )
 
         # Run decoder.
         hidden_states = self.decoder(
