@@ -56,12 +56,16 @@ def prepare_moe_topk_routing_replay_indices(
         moe_topk_routing_replay_indices = (
             moe_topk_routing_replay_indices.transpose(0, 1).contiguous()
         )
+    elif leading_dims == seq_first_dims:
+        pass
     elif leading_dims != seq_first_dims:
         raise ValueError(
             "Leading replay-index dimensions do not match either the batch-first or "
             f"sequence-first layout: got {leading_dims}, expected {batch_first_dims} "
             f"or {seq_first_dims}."
         )
+    else:
+        raise NotImplementedError
 
     if sequence_parallel and scatter_to_sequence_parallel:
         moe_topk_routing_replay_indices = scatter_fn(
