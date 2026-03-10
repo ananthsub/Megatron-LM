@@ -146,9 +146,14 @@ class Router(ABC, MegatronModule):
 
     def set_moe_layer_number(self, moe_layer_idx: int):
         """Set the MoE layer number for the router."""
+        if self.moe_layer_idx is not None:
+            print(f"DEBUG: Router.set_moe_layer_number: cur moe layer idx = {self.moe_layer_idx} vs {moe_layer_idx}", flush=True)
+            return
+        print(f"DEBUG: Router.set_moe_layer_number: moe layer idx = {moe_layer_idx}", flush=True)
         self.moe_layer_idx = moe_layer_idx
 
     def set_num_moe_layers(self, num_moe_layers: int):
+        print(f"DEBUG: Router.set_num_moe_layers: {self.num_moe_layers}", flush=True)
         self.num_moe_layers = num_moe_layers
 
 
@@ -703,6 +708,7 @@ class TopKRouter(Router):
 
         debug_log_dir = os.environ.get("NRL_MCORE_DEBUG_LOG_DIR", None)
         if debug_log_dir is not None:
+            print(f"DEBUG: TopKRouter.routing: debug log dir = {repr(debug_log_dir)}", flush=True)
             rank = torch.distributed.get_rank()
 
             debug_log_path = os.path.join(
@@ -745,6 +751,8 @@ class TopKRouter(Router):
 
             with open(debug_log_path, "a") as log_file:
                 print(json.dumps(log_item, separators=(",", ":")), file=log_file, flush=True)
+        else:
+            print(f"DEBUG: TopKRouter.routing: no debug log dir", flush=True)
 
         print(f"DEBUG: TopKRouter.routing: input logits          shape = {logits.shape} dtype = {logits.dtype}", flush=True)
         print(f"DEBUG: TopKRouter.routing: output probs          shape = {probs.shape} dtype = {probs.dtype}", flush=True)
