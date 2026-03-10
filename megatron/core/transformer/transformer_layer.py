@@ -514,13 +514,17 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
 
     def set_moe_layer_number(self, moe_layer_idx: int) -> Optional[bool]:
         if self.is_moe_layer:
-            self.moe_layer_idx = moe_layer_idx
-            self.mlp.set_moe_layer_number(moe_layer_idx)
-            return True
+            if self.mlp.set_moe_layer_number(moe_layer_idx):
+                self.moe_layer_idx = moe_layer_idx
+                return True
+            else:
+                print(f"DEBUG: TransformerLayer.set_moe_layer_number: warning: cur moe layer idx = {self.moe_layer_idx} vs {moe_layer_idx}", flush=True)
+                return False
         return None
 
     def set_num_moe_layers(self, num_moe_layers: int) -> Optional[bool]:
         if self.is_moe_layer:
+            print(f"DEBUG: TransformerLayer.set_num_moe_layers: {num_moe_layers}", flush=True)
             self.num_moe_layers = num_moe_layers
             self.mlp.set_num_moe_layers(num_moe_layers)
             return True

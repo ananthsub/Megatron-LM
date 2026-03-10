@@ -130,11 +130,16 @@ class BaseMoELayer(MegatronModule, ABC):
 
     def set_moe_layer_number(self, moe_layer_idx: int):
         """Set the MoE layer number for the MoE layer."""
+        if self.moe_layer_idx is not None:
+            print(f"DEBUG: BaseMoELayer.set_moe_layer_number: warning: cur moe layer idx = {self.moe_layer_idx} vs {moe_layer_idx} global layer num = {self.layer_number}", flush=True)
+            return False
         print(f"DEBUG: BaseMoELayer.set_moe_layer_number: moe layer idx = {moe_layer_idx} global layer num = {self.layer_number}", flush=True)
         self.moe_layer_idx = moe_layer_idx
         self.router.set_moe_layer_number(moe_layer_idx)
+        return True
 
     def set_num_moe_layers(self, num_moe_layers: int):
+        print(f"DEBUG: BaseMoELayer.set_num_moe_layers: {num_moe_layers}", flush=True)
         self.num_moe_layers = num_moe_layers
         self.router.set_num_moe_layers(num_moe_layers)
 
