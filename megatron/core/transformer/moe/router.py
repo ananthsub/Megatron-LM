@@ -711,7 +711,7 @@ class TopKRouter(Router):
             print(f"DEBUG: TopKRouter.routing: debug log dir = {repr(debug_log_dir)}", flush=True)
             rank = torch.distributed.get_rank()
 
-            if True:
+            if False:
                 debug_log_path = os.path.join(
                     debug_log_dir,
                     f"mcore-TopKRouter-layer_{self.layer_number}-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
