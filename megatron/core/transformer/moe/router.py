@@ -711,10 +711,16 @@ class TopKRouter(Router):
             print(f"DEBUG: TopKRouter.routing: debug log dir = {repr(debug_log_dir)}", flush=True)
             rank = torch.distributed.get_rank()
 
-            debug_log_path = os.path.join(
-                debug_log_dir,
-                f"mcore-TopKRouter-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
-            )
+            if True:
+                debug_log_path = os.path.join(
+                    debug_log_dir,
+                    f"mcore-TopKRouter-layer_{self.layer_number}-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
+                )
+            else:
+                debug_log_path = os.path.join(
+                    debug_log_dir,
+                    f"mcore-TopKRouter-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
+                )
 
             debug_log_metadata_json = os.environ.get("NRL_MCORE_DEBUG_LOG_METADATA_JSON", None)
             if debug_log_metadata_json:
@@ -734,7 +740,9 @@ class TopKRouter(Router):
             cp_rank = get_context_parallel_rank()
 
             log_item |= {
+                "layer_number": self.layer_number,
                 "moe_layer_idx": self.moe_layer_idx,
+                "num_moe_layers": self.num_moe_layers,
                 "rank": rank,
                 "ep_rank": ep_rank,
                 "etp_rank": etp_rank,
@@ -832,6 +840,10 @@ class TopKRouter(Router):
                                                    Shape [seq_length, bsz]. True for valid tokens,
                                                    False for padding tokens. Defaults to None.
         """
+        print(
+            f"DEBUG: TopKRouter.forward: moe layer idx = {self.moe_layer_idx} global layer num = {self.layer_number}",
+            flush=True,
+        )
         if topk_routing_replay_indices is not None:
             if isinstance(topk_routing_replay_indices, torch.Tensor):
                 print(f"DEBUG: TopKRouter.forward: topk_routing_replay_indices shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
