@@ -27,7 +27,7 @@ from megatron.core.tensor_parallel import gather_from_sequence_parallel_region
 from megatron.core.transformer.enums import CudaGraphScope, ModelType
 from megatron.core.transformer.moe.model_utils import (
     initialize_moe_layer_metadata,
-    prepare_moe_topk_routing_replay_indices,
+    sequence_parallelize_extra_input_like_tensor,
 )
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlock,
@@ -529,14 +529,14 @@ class GPTModel(LanguageModule):
         rotary_pos_cos_sin = preproc_output[6] if len(preproc_output) == 7 else None
 
         batch_size, seq_length = input_ids.shape[:2]
-        moe_topk_routing_replay_indices = prepare_moe_topk_routing_replay_indices(
+        moe_topk_routing_replay_indices = sequence_parallelize_extra_input_like_tensor(
             moe_topk_routing_replay_indices,
             batch_size=batch_size,
             seq_length=seq_length,
-            sequence_parallel=self.config.sequence_parallel,
-            scatter_to_sequence_parallel=self.scatter_embedding_sequence_parallel,
+            reduce_scatter_embeddings=(
+                self.config.sequence_parallel and self.scatter_embedding_sequence_parallel
+            ),
             tp_group=self.pg_collection.tp,
-            scatter_fn=tensor_parallel.scatter_to_sequence_parallel_region,
         )
 
         # Run decoder.

@@ -17,7 +17,7 @@ from megatron.core.quantization.utils import get_quant_config_or_none
 from megatron.core.tensor_parallel import gather_from_sequence_parallel_region
 from megatron.core.transformer import TransformerConfig
 from megatron.core.transformer.enums import ModelType
-from megatron.core.transformer.moe.model_utils import prepare_moe_topk_routing_replay_indices
+from megatron.core.transformer.moe.model_utils import sequence_parallelize_extra_input_like_tensor
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlock,
     mtp_on_this_rank,
@@ -310,14 +310,14 @@ class MambaModel(LanguageModule):
         # assert attention_mask is None, "The attention mask is ignored and should be set to None"
 
         batch_size, seq_length = input_ids.shape[:2]
-        moe_topk_routing_replay_indices = prepare_moe_topk_routing_replay_indices(
+        moe_topk_routing_replay_indices = sequence_parallelize_extra_input_like_tensor(
             moe_topk_routing_replay_indices,
             batch_size=batch_size,
             seq_length=seq_length,
-            sequence_parallel=self.config.sequence_parallel,
-            scatter_to_sequence_parallel=self.scatter_embedding_sequence_parallel,
+            reduce_scatter_embeddings=(
+                self.config.sequence_parallel and self.scatter_embedding_sequence_parallel
+            ),
             tp_group=self.pg_collection.tp,
-            scatter_fn=tensor_parallel.scatter_to_sequence_parallel_region,
         )
 
         if isinstance(decoder_input, Tensor):
