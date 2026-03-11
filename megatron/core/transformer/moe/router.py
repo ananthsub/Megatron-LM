@@ -153,7 +153,7 @@ class Router(ABC, MegatronModule):
         self.moe_layer_idx = moe_layer_idx
 
     def set_num_moe_layers(self, num_moe_layers: int):
-        print(f"DEBUG: Router.set_num_moe_layers: {self.num_moe_layers}", flush=True)
+        print(f"DEBUG: Router.set_num_moe_layers: {num_moe_layers}", flush=True)
         self.num_moe_layers = num_moe_layers
 
 
