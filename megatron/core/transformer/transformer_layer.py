@@ -539,13 +539,14 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         """
         hidden_states, context = self._forward_attention(*args, **kwargs)
         moe_topk_routing_replay_indices = kwargs.get("moe_topk_routing_replay_indices", None)
-        if moe_topk_routing_replay_indices is not None:
-            if isinstance(moe_topk_routing_replay_indices, Tensor):
-                print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+        if False:
+            if moe_topk_routing_replay_indices is not None:
+                if isinstance(moe_topk_routing_replay_indices, Tensor):
+                    print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+                else:
+                    print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
             else:
-                print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
-        else:
-            print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is None", flush=True)
+                print(f"DEBUG: TransformerLayer.forward: moe_topk_routing_replay_indices is None", flush=True)
         output = self._forward_mlp(
             hidden_states,
             kwargs.get("inference_context", None),

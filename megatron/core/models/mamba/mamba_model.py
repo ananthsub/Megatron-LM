@@ -247,12 +247,13 @@ class MambaModel(LanguageModule):
 
         It either returns the Loss values if labels are given or the final hidden units
         """
-        if isinstance(input_ids, Tensor):
-            print(f"DEBUG: MambaModel.forward: input ids     shape = {input_ids.shape} dtype = {input_ids.dtype}", flush=True)
-        if isinstance(decoder_input, Tensor):
-            print(f"DEBUG: MambaModel.forward: og dc input   shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
-        if isinstance(moe_topk_routing_replay_indices, Tensor):
-            print(f"DEBUG: MambaModel.forward: og moe topk   shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+        if False:
+            if isinstance(input_ids, Tensor):
+                print(f"DEBUG: MambaModel.forward: input ids     shape = {input_ids.shape} dtype = {input_ids.dtype}", flush=True)
+            if isinstance(decoder_input, Tensor):
+                print(f"DEBUG: MambaModel.forward: og dc input   shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+            if isinstance(moe_topk_routing_replay_indices, Tensor):
+                print(f"DEBUG: MambaModel.forward: og moe topk   shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
 
         # If decoder_input is provided (not None), then input_ids and position_ids are ignored.
         # Otherwise, apply embedding layer on input_ids and position_ids to get decoder_input.
@@ -320,14 +321,15 @@ class MambaModel(LanguageModule):
             tp_group=self.pg_collection.tp,
         )
 
-        if isinstance(decoder_input, Tensor):
-            print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
-        if isinstance(moe_topk_routing_replay_indices, Tensor):
-            print(f"DEBUG: MambaModel.forward: moe topk      shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
-        elif moe_topk_routing_replay_indices is not None:
-            print(f"DEBUG: MambaModel.forward: moe topk       type = {type(moe_topk_routing_replay_indices).__name__}", flush=True)
-        else:
-            print(f"DEBUG: MambaModel.forward: moe topk         is None", flush=True)
+        if False:
+            if isinstance(decoder_input, Tensor):
+                print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+            if isinstance(moe_topk_routing_replay_indices, Tensor):
+                print(f"DEBUG: MambaModel.forward: moe topk      shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            elif moe_topk_routing_replay_indices is not None:
+                print(f"DEBUG: MambaModel.forward: moe topk       type = {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+            else:
+                print(f"DEBUG: MambaModel.forward: moe topk         is None", flush=True)
 
         # Run decoder.
         hidden_states = self.decoder(

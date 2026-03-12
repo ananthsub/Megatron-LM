@@ -288,13 +288,14 @@ class MambaStack(MegatronModule):
         Returns:
             Tensor: the output tensor.
         """
-        if moe_topk_routing_replay_indices is not None:
-            if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
-                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+        if False:
+            if moe_topk_routing_replay_indices is not None:
+                if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
+                    print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+                else:
+                    print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
             else:
-                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
-        else:
-            print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is None", flush=True)
+                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is None", flush=True)
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
