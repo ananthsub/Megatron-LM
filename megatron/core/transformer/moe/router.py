@@ -650,7 +650,9 @@ class TopKRouter(Router):
                 debug_log_metadata = None
 
             if isinstance(debug_log_metadata, dict):
-                debug_log_level = debug_log_metadata.get("log_level", -1)
+                debug_log_level = debug_log_metadata.get("log_level", None)
+                if debug_log_level is None:
+                    debug_log_level = -1
                 log_item = debug_log_metadata
             else:
                 log_item = {}
