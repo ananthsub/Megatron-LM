@@ -5,7 +5,7 @@ import torch
 
 from megatron.core.transformer.moe.model_utils import (
     initialize_moe_layer_metadata,
-    prepare_moe_topk_routing_replay_indices,
+    sequence_parallelize_extra_input_like_tensor,
 )
 
 
@@ -40,10 +40,10 @@ def test_initialize_moe_layer_metadata_numbers_only_top_level_moe_layers():
     assert moe_b.num_moe_layers == [2]
 
 
-def test_prepare_moe_topk_routing_replay_indices_normalizes_batch_first_layout():
+def test_sequence_parallelize_extra_input_like_tensor_normalizes_batch_first_layout():
     replay_indices = torch.arange(2 * 3 * 4 * 2).view(2, 3, 4, 2)
 
-    prepared = prepare_moe_topk_routing_replay_indices(
+    prepared = sequence_parallelize_extra_input_like_tensor(
         replay_indices,
         batch_size=2,
         seq_length=3,
@@ -57,10 +57,10 @@ def test_prepare_moe_topk_routing_replay_indices_normalizes_batch_first_layout()
     assert torch.equal(prepared, replay_indices.transpose(0, 1).contiguous())
 
 
-def test_prepare_moe_topk_routing_replay_indices_preserves_seq_first_layout():
+def test_sequence_parallelize_extra_input_like_tensor_preserves_seq_first_layout():
     replay_indices = torch.arange(3 * 2 * 4 * 2).view(3, 2, 4, 2)
 
-    prepared = prepare_moe_topk_routing_replay_indices(
+    prepared = sequence_parallelize_extra_input_like_tensor(
         replay_indices,
         batch_size=2,
         seq_length=3,
@@ -74,7 +74,7 @@ def test_prepare_moe_topk_routing_replay_indices_preserves_seq_first_layout():
     assert torch.equal(prepared, replay_indices)
 
 
-def test_prepare_moe_topk_routing_replay_indices_scatter_happens_after_normalization():
+def test_sequence_parallelize_extra_input_like_tensor_scatter_happens_after_normalization():
     replay_indices = torch.arange(2 * 4 * 3 * 2).view(2, 4, 3, 2)
     scatter_inputs = []
 
@@ -82,7 +82,7 @@ def test_prepare_moe_topk_routing_replay_indices_scatter_happens_after_normaliza
         scatter_inputs.append(tensor.clone())
         return tensor[:2]
 
-    prepared = prepare_moe_topk_routing_replay_indices(
+    prepared = sequence_parallelize_extra_input_like_tensor(
         replay_indices,
         batch_size=2,
         seq_length=4,
@@ -98,11 +98,11 @@ def test_prepare_moe_topk_routing_replay_indices_scatter_happens_after_normaliza
     assert torch.equal(prepared, expected[:2])
 
 
-def test_prepare_moe_topk_routing_replay_indices_rejects_mismatched_shapes():
+def test_sequence_parallelize_extra_input_like_tensor_rejects_mismatched_shapes():
     replay_indices = torch.zeros(5, 6, 2, 1, dtype=torch.long)
 
     with pytest.raises(ValueError, match="Leading replay-index dimensions"):
-        prepare_moe_topk_routing_replay_indices(
+        sequence_parallelize_extra_input_like_tensor(
             replay_indices,
             batch_size=2,
             seq_length=3,
