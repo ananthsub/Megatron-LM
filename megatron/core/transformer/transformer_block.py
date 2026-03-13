@@ -2,7 +2,7 @@
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import torch
 from torch import Tensor
@@ -454,6 +454,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         packed_seq_params: PackedSeqParams,
         use_inner_quantization_context: bool,
         padding_mask: Optional[Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ):
         """Forward method with activation checkpointing."""
 
@@ -496,6 +497,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                             inference_context=None,
                             packed_seq_params=packed_seq_params,
                             padding_mask=padding_mask,
+                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
                 return hidden_states, context
 
@@ -624,6 +626,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
         packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
         dynamic_inference_decode_only: Optional[bool] = None,
@@ -734,6 +737,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                     packed_seq_params=packed_seq_params,
                     use_inner_quantization_context=use_inner_quantization_context,
                     padding_mask=padding_mask,
+                    moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                 )
             else:
                 for l_no, layer in enumerate(self.layers):
@@ -767,6 +771,7 @@ class TransformerBlock(GraphableMegatronModule, MegatronModule):
                             packed_seq_params=packed_seq_params,
                             sequence_len_offset=sequence_len_offset,
                             padding_mask=padding_mask,
+                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
 
                     if (
