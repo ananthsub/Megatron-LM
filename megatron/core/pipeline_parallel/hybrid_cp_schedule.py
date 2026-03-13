@@ -11,6 +11,16 @@ from megatron.core import parallel_state
 from megatron.core.rerun_state_machine import RerunDataIterator
 from megatron.core.transformer.transformer_config import TransformerConfig
 
+# Number of forward groups (equivalent to num_microbatches) used in the most recent
+# hybrid CP step.  Set each iteration so that training.py can use it for loss scaling.
+_num_total_groups: int = 0
+
+
+def get_num_total_groups() -> int:
+    """Return the num_total_groups value from the most recent hybrid CP step."""
+    return _num_total_groups
+
+
 class BalancedCPScheduler:
     """
     This class provides the functionality to form groups of sub-samples
@@ -573,6 +583,11 @@ def hybrid_context_parallel_forward_backward(
     # With sequence packing + Dynamic CP enable, num_total_groups is equivalent to num_microbatches.
     # num_samples_this_group is set to 1.
     num_total_groups = _broadcast_num_total_groups(num_total_groups)
+
+    # Publish num_total_groups so training.py can use it for MoE loss scaling.
+    global _num_total_groups
+    _num_total_groups = num_total_groups
+
     num_samples_this_group = [1 for _ in range(num_total_groups)] # After sequence packing, each group has only one sub-sample
 
     current_microbatch = 0
