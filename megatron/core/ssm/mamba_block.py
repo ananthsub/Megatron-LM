@@ -131,7 +131,9 @@ class MambaStack(MegatronModule):
             pp_layer_offset, self.layer_type_list = self._select_layers_for_pipeline_parallel(
                 self.layer_type_list
             )
+
         # Build main decoder layers using shared layer builder
+        moe_layer_idx = 0
         self.layers = nn.ModuleList()
         for i, layer_type in enumerate(self.layer_type_list):
             fp8_init_context = get_fp8_context(self.config, i + pp_layer_offset, is_init=True)
@@ -170,9 +172,17 @@ class MambaStack(MegatronModule):
                         layer_number=i + 1,
                         pg_collection=pg_collection,
                     )
+                    layer.set_moe_layer_number(moe_layer_idx)
+                    moe_layer_idx += 1
                 else:
                     assert False, "unexpected layer_type"
+            print(f"DEBUG: MambaStack: layer offset = {i} type = {layer_type} is a {type(layer).__name__}", flush=True)
             self.layers.append(layer)
+
+        self.num_moe_layers = moe_layer_idx
+        for i, layer_type in enumerate(self.layer_type_list):
+            if layer_type == LayerSymbols.MOE:
+                self.layers[i].set_num_moe_layers(self.num_moe_layers)
 
         # Required for activation recomputation
         self.num_layers_per_pipeline_rank = len(self.layers)
@@ -259,6 +269,7 @@ class MambaStack(MegatronModule):
         inference_params: Optional[BaseInferenceContext] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask=None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ):
         """
         Forward function of the MambaStack class.
@@ -277,6 +288,14 @@ class MambaStack(MegatronModule):
         Returns:
             Tensor: the output tensor.
         """
+        if False:
+            if moe_topk_routing_replay_indices is not None:
+                if isinstance(moe_topk_routing_replay_indices, torch.Tensor):
+                    print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+                else:
+                    print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is a {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+            else:
+                print(f"DEBUG: MambaStack.forward: moe_topk_routing_replay_indices is None", flush=True)
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
@@ -326,7 +345,7 @@ class MambaStack(MegatronModule):
         outer_fp8_context = get_fp8_context(self.config) if use_outer_fp8_context else nullcontext()
 
         with outer_fp8_context:
-            for layer in self.layers:
+            for layer_type, layer in zip(self.layer_type_list, self.layers):
                 inner_fp8_context = (
                     get_fp8_context(self.config, layer.layer_number - 1)
                     if use_inner_fp8_context
@@ -342,8 +361,10 @@ class MambaStack(MegatronModule):
                             sequence_len_offset=sequence_len_offset,
                             packed_seq_params=packed_seq_params,
                             padding_mask=padding_mask,
+                            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
                         )
                     else:  # MambaLayer
+                        assert layer_type != LayerSymbols.MOE
                         hidden_states = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,

@@ -1,5 +1,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
+import logging
 from typing import Literal, Optional
 
 from torch import Tensor
@@ -16,6 +17,7 @@ from megatron.core.quantization.utils import get_quant_config_or_none
 from megatron.core.tensor_parallel import gather_from_sequence_parallel_region
 from megatron.core.transformer import TransformerConfig
 from megatron.core.transformer.enums import ModelType
+from megatron.core.transformer.moe.model_utils import sequence_parallelize_extra_input_like_tensor
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlock,
     mtp_on_this_rank,
@@ -28,6 +30,9 @@ from megatron.core.utils import (
     deprecate_inference_params,
     is_using_quantization_scales,
 )
+
+logger = logging.getLogger(__name__)
+
 
 
 class MambaModel(LanguageModule):
@@ -108,6 +113,7 @@ class MambaModel(LanguageModule):
         self.parallel_output = parallel_output
         self.share_embeddings_and_output_weights = share_embeddings_and_output_weights
         self.position_embedding_type = position_embedding_type
+        self.scatter_embedding_sequence_parallel = scatter_embedding_sequence_parallel
         self.vp_stage = vp_stage
 
         # Parse unified pattern to extract main and MTP components
@@ -159,6 +165,7 @@ class MambaModel(LanguageModule):
             dtype=config.params_dtype,
             pg_collection=self.pg_collection,
         )
+        print(f"DEBUG: MambaModel: decoder is a {type(self.decoder).__name__}", flush=True)
 
         # MTP block - uses mtp_block_spec from mamba_stack_spec.submodules
         if self.mtp_process:
@@ -232,6 +239,7 @@ class MambaModel(LanguageModule):
         loss_mask: Optional[Tensor] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
         padding_mask: Optional[Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[Tensor] = None,
     ) -> Tensor:
         """Forward function of the Mamba model. This function passes the input tensors
         through the embedding layer, and then the decoder and finally into the post
@@ -239,6 +247,14 @@ class MambaModel(LanguageModule):
 
         It either returns the Loss values if labels are given or the final hidden units
         """
+        if False:
+            if isinstance(input_ids, Tensor):
+                print(f"DEBUG: MambaModel.forward: input ids     shape = {input_ids.shape} dtype = {input_ids.dtype}", flush=True)
+            if isinstance(decoder_input, Tensor):
+                print(f"DEBUG: MambaModel.forward: og dc input   shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+            if isinstance(moe_topk_routing_replay_indices, Tensor):
+                print(f"DEBUG: MambaModel.forward: og moe topk   shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+
         # If decoder_input is provided (not None), then input_ids and position_ids are ignored.
         # Otherwise, apply embedding layer on input_ids and position_ids to get decoder_input.
 
@@ -294,6 +310,27 @@ class MambaModel(LanguageModule):
         #   be None, so this assert will succeed.
         # assert attention_mask is None, "The attention mask is ignored and should be set to None"
 
+        batch_size, seq_length = input_ids.shape[:2]
+        moe_topk_routing_replay_indices = sequence_parallelize_extra_input_like_tensor(
+            moe_topk_routing_replay_indices,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            reduce_scatter_embeddings=(
+                self.config.sequence_parallel and self.scatter_embedding_sequence_parallel
+            ),
+            tp_group=self.pg_collection.tp,
+        )
+
+        if False:
+            if isinstance(decoder_input, Tensor):
+                print(f"DEBUG: MambaModel.forward: dc input      shape = {decoder_input.shape} dtype = {decoder_input.dtype}", flush=True)
+            if isinstance(moe_topk_routing_replay_indices, Tensor):
+                print(f"DEBUG: MambaModel.forward: moe topk      shape = {moe_topk_routing_replay_indices.shape} dtype = {moe_topk_routing_replay_indices.dtype}", flush=True)
+            elif moe_topk_routing_replay_indices is not None:
+                print(f"DEBUG: MambaModel.forward: moe topk       type = {type(moe_topk_routing_replay_indices).__name__}", flush=True)
+            else:
+                print(f"DEBUG: MambaModel.forward: moe topk         is None", flush=True)
+
         # Run decoder.
         hidden_states = self.decoder(
             hidden_states=decoder_input,
@@ -302,6 +339,7 @@ class MambaModel(LanguageModule):
             rotary_pos_emb=rotary_pos_emb,
             packed_seq_params=packed_seq_params,
             padding_mask=padding_mask,
+            moe_topk_routing_replay_indices=moe_topk_routing_replay_indices,
         )
 
         output_weight = None
