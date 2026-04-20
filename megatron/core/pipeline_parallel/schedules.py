@@ -658,6 +658,7 @@ def forward_backward_no_pipelining(
             total_num_tokens,
             check_first_val_step,
             model_type,
+            pg_collection,
         )
         _log_memory_usage(f"After hybrid_context_parallel_forward_backward")
     else:
