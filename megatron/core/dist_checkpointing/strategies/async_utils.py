@@ -564,7 +564,14 @@ class PersistentAsyncCaller(AsyncCaller):
         # in this new process are on the right device, and device 0 on the node does not
         # take on undue memory burden from other devices on node (default behavior without
         # this line).
-        torch.cuda.set_device(rank % torch.cuda.device_count())
+        device_id = rank % torch.cuda.device_count()
+        torch.cuda.set_device(device_id)
+        # Eagerly initialize the CUDA context on this device. `set_device` alone does not
+        # create a context (PyTorch lazy-inits on first allocation), but receiving CUDA IPC
+        # handles via `torch.UntypedStorage._new_shared_cuda` requires an existing context
+        # on the target device. Without this, spawned workers can hit
+        # `pidfd_getfd: Bad file descriptor` when consuming shared CUDA tensors.
+        torch.empty(1, device=f'cuda:{device_id}')
 
         # Set QoS to deprioritize checkpoint writing vs training
         # This prevents checkpoint I/O from interfering with data loader
