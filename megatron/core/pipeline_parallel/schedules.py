@@ -1,6 +1,7 @@
 # Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
 import contextlib
+import os
 from functools import partial
 from typing import Callable, Iterator, List, Optional, Union
 
@@ -522,7 +523,16 @@ def check_first_val_step(first_val_step, forward_only, cond):
 
 
 def _log_memory_usage(reporting_msg: str):
-    """Log memory usage."""
+    """Log memory usage on rank 0.
+
+    No-op unless the ``MEGATRON_DEBUG_LOG_MEMORY`` environment variable is set
+    to a truthy value (``1``, ``true``, ``yes``, ``on``; case-insensitive).
+    Guarded to avoid spamming logs and incurring per-step overhead in
+    production training, since this is called multiple times per microbatch
+    inside the forward/backward loop.
+    """
+    if os.environ.get("MEGATRON_DEBUG_LOG_MEMORY", "").lower() not in ("1", "true", "yes", "on"):
+        return
     if torch.distributed.get_rank() == 0:
         print(f">>>>> Reporting memory usage at: {reporting_msg} <<<<<<")
         print(f"Current memory usage: {torch.cuda.memory_allocated() / 1024**2} MB")
