@@ -691,11 +691,11 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
 
     def _forward_mlp(
         self,
-        hidden_states: Tensor,
-        inference_context: BaseInferenceContext | None = None,
-        padding_mask: Tensor | None = None,
-        packed_seq_params=None,
-    ) -> Tensor | list[Tensor | None]:
+        hidden_states, 
+        inference_context=None,
+        padding_mask=None,
+        packed_seq_params=None
+    ):
         """
         Perform a forward pass through the feed-forward layer.
 
