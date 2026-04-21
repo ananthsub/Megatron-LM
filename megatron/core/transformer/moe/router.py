@@ -2,10 +2,20 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional, Union
+import json
+import os
 
 import torch
 
 from megatron.core.jit import jit_fuser
+from megatron.core.parallel_state import (
+    get_context_parallel_rank,
+    get_expert_model_parallel_rank,
+    get_expert_tensor_parallel_rank,
+    get_pipeline_model_parallel_rank,
+    get_tensor_model_parallel_rank,
+)
+from megatron.core.tensor_parallel import reduce_from_tensor_model_parallel_region
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.moe.moe_utils import (
     MoEAuxLossAutoScaler,
@@ -47,6 +57,8 @@ class Router(ABC, MegatronModule):
         self.num_experts = self.config.num_moe_experts
         self.moe_aux_loss_func = None
         self.layer_number = None
+        self.moe_layer_idx = None
+        self.num_moe_layers = None
         self.is_mtp_layer = is_mtp_layer
         self.tp_group = pg_collection.tp
         self.cp_group = pg_collection.cp
@@ -131,6 +143,18 @@ class Router(ABC, MegatronModule):
     def set_layer_number(self, layer_number: int):
         """Set the layer number for the router."""
         self.layer_number = layer_number
+
+    def set_moe_layer_number(self, moe_layer_idx: int):
+        """Set the MoE layer number for the router."""
+        if self.moe_layer_idx is not None:
+            print(f"DEBUG: Router.set_moe_layer_number: cur moe layer idx = {self.moe_layer_idx} vs {moe_layer_idx}", flush=True)
+            return
+        print(f"DEBUG: Router.set_moe_layer_number: moe layer idx = {moe_layer_idx}", flush=True)
+        self.moe_layer_idx = moe_layer_idx
+
+    def set_num_moe_layers(self, num_moe_layers: int):
+        print(f"DEBUG: Router.set_num_moe_layers: {num_moe_layers}", flush=True)
+        self.num_moe_layers = num_moe_layers
 
 
 class TopKRouter(Router):
@@ -583,7 +607,12 @@ class TopKRouter(Router):
                     routing_map = routing_map & (~padding_mask)
                 self.local_tokens_per_expert += routing_map.sum(dim=0)
 
-    def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+    def routing(
+        self,
+        logits: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None,
+        topk_routing_replay_indices: Optional[torch.Tensor] = None,
+    ):
         """Top-k routing function
 
         Args:
@@ -597,8 +626,75 @@ class TopKRouter(Router):
             routing_map (torch.Tensor): The mapping of token to experts assignment,
                 with shape [num_tokens, num_experts].
         """
+        debug_log_level = -1
+        debug_log_dir = os.environ.get("NRL_MCORE_DEBUG_LOG_DIR", None)
+        if debug_log_dir is not None:
+            # print(f"DEBUG: TopKRouter.routing: debug log dir = {repr(debug_log_dir)}", flush=True)
+            rank = torch.distributed.get_rank()
+
+            if False:
+                debug_log_path = os.path.join(
+                    debug_log_dir,
+                    f"mcore-TopKRouter-layer_{self.layer_number}-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
+                )
+            else:
+                debug_log_path = os.path.join(
+                    debug_log_dir,
+                    f"mcore-TopKRouter-moe_layer_{self.moe_layer_idx}-rank_{rank}.debug.jsonl",
+                )
+
+            debug_log_metadata_json = os.environ.get("NRL_MCORE_DEBUG_LOG_METADATA_JSON", None)
+            if debug_log_metadata_json:
+                debug_log_metadata = json.loads(debug_log_metadata_json)
+            else:
+                debug_log_metadata = None
+
+            if isinstance(debug_log_metadata, dict):
+                debug_log_level = debug_log_metadata.get("log_level", None)
+                if debug_log_level is None:
+                    debug_log_level = -1
+                log_item = debug_log_metadata
+            else:
+                log_item = {}
+
+            ep_rank = get_expert_model_parallel_rank()
+            etp_rank = get_expert_tensor_parallel_rank()
+            tp_rank = get_tensor_model_parallel_rank()
+            pp_rank = get_pipeline_model_parallel_rank()
+            cp_rank = get_context_parallel_rank()
+
+            log_item |= {
+                "layer_number": self.layer_number,
+                "moe_layer_idx": self.moe_layer_idx,
+                "num_moe_layers": self.num_moe_layers,
+                "rank": rank,
+                "ep_rank": ep_rank,
+                "etp_rank": etp_rank,
+                "tp_rank": tp_rank,
+                "pp_rank": pp_rank,
+                "cp_rank": cp_rank,
+            }
+        else:
+            # print(f"DEBUG: TopKRouter.routing: no debug log dir", flush=True)
+            pass
+
+        if debug_log_level >= 1:
+            print(f"DEBUG: TopKRouter.routing: orig logits           shape = {logits.shape} dtype = {logits.dtype}", flush=True)
         seq_length, bsz = logits.shape[:2]
         logits = logits.view(-1, self.config.num_moe_experts)
+        if debug_log_level >= 1:
+            print(f"DEBUG: TopKRouter.routing: view logits           shape = {logits.shape} dtype = {logits.dtype}", flush=True)
+
+        if topk_routing_replay_indices is not None:
+            if debug_log_level >= 1:
+                print(f"DEBUG: TopKRouter.routing: orig replay indices   shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
+            assert seq_length == topk_routing_replay_indices.shape[0]
+            assert bsz == topk_routing_replay_indices.shape[1]
+            topk_routing_replay_indices = topk_routing_replay_indices.view(-1, self.num_moe_layers, self.topk)[:,self.moe_layer_idx,:]
+            if debug_log_level >= 1:
+                print(f"DEBUG: TopKRouter.routing: view replay indices   shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
+        else:
+            topk_routing_replay_indices = None
 
         # Flatten padding_mask to [num_tokens] if provided
         if padding_mask is not None:
@@ -607,11 +703,20 @@ class TopKRouter(Router):
         # Apply Z-Loss
         logits = self.apply_z_loss(logits, padding_mask=padding_mask)
 
+        noreplay_probs = None
+        routing_noreplay_map = None
+        topk_routing_noreplay_indices = None
+
+        probs = None
+        routing_map = None
+        topk_routing_indices = None
+
         # Calculate probs and routing_map for token dispatching
         if self.routing_type == "sinkhorn":
+            assert topk_routing_replay_indices is None
             probs, routing_map = self.sinkhorn_load_balancing(logits)
         else:
-            probs, routing_map = topk_routing_with_score_function(
+            noreplay_probs, routing_noreplay_map, topk_routing_noreplay_indices = topk_routing_with_score_function(
                 logits,
                 self.topk,
                 use_pre_softmax=self.config.moe_router_pre_softmax,
@@ -623,6 +728,61 @@ class TopKRouter(Router):
                 fused=self.config.moe_router_fusion,
                 router_replay=self.router_replay,
             )
+
+        topk_routing_replay_indices_premask = topk_routing_replay_indices
+        if topk_routing_replay_indices is not None:
+            # NB: only do non-replay re-padding when K >= 2 because otherwise
+            # can't distinguish padding rows.
+            assert topk_routing_noreplay_indices is not None
+            if self.topk > 1:
+                topk_routing_replay_repad_mask = (torch.sum(topk_routing_replay_indices, dim=-1) == 0).to(
+                    device=topk_routing_replay_indices.device
+                )
+                topk_routing_replay_indices_clone = topk_routing_replay_indices.clone().to(
+                    dtype=topk_routing_noreplay_indices.dtype
+                )
+                topk_routing_replay_indices_clone[topk_routing_replay_repad_mask] = (
+                    topk_routing_noreplay_indices[topk_routing_replay_repad_mask]
+                )
+                topk_routing_replay_indices = topk_routing_replay_indices_clone
+            probs, routing_map, topk_routing_indices = topk_routing_with_score_function(
+                logits,
+                self.topk,
+                use_pre_softmax=self.config.moe_router_pre_softmax,
+                num_groups=self.config.moe_router_num_groups,
+                group_topk=self.config.moe_router_group_topk,
+                scaling_factor=self.config.moe_router_topk_scaling_factor,
+                score_function=self.score_function,
+                expert_bias=self.expert_bias,
+                fused=self.config.moe_router_fusion,
+                router_replay=self.router_replay,
+                topk_routing_replay_indices=topk_routing_replay_indices,
+            )
+        else:
+            probs = noreplay_probs
+            routing_map = routing_noreplay_map
+            topk_routing_indices = topk_routing_noreplay_indices
+
+        if debug_log_dir is not None:
+            log_item["topk_routing_noreplay_indices"] = topk_routing_noreplay_indices.tolist() if topk_routing_noreplay_indices is not None else None
+            # NB: logging the full pre-masked routing replay indices.
+            # log_item["topk_routing_replay_indices"] = topk_routing_replay_indices.tolist() if topk_routing_replay_indices is not None else None
+            log_item["topk_routing_replay_indices"] = topk_routing_replay_indices_premask.tolist() if topk_routing_replay_indices_premask is not None else None
+            log_item["topk_routing_indices"] = topk_routing_indices.tolist() if topk_routing_indices is not None else None
+
+            with open(debug_log_path, "a") as log_file:
+                print(json.dumps(log_item, separators=(",", ":")), file=log_file, flush=True)
+
+        if debug_log_level >= 1:
+            print(f"DEBUG: TopKRouter.routing: input logits          shape = {logits.shape} dtype = {logits.dtype}", flush=True)
+            print(f"DEBUG: TopKRouter.routing: output probs          shape = {probs.shape} dtype = {probs.dtype}", flush=True)
+            print(f"DEBUG: TopKRouter.routing: output map            shape = {routing_map.shape} dtype = {routing_map.dtype}", flush=True)
+            if topk_routing_indices is not None:
+                print(f"DEBUG: TopKRouter.routing: topk routing indices  shape = {topk_routing_indices.shape} dtype = {topk_routing_indices.dtype}", flush=True)
+            if topk_routing_replay_indices is not None:
+                print(f"DEBUG: TopKRouter.routing: output noreplay probs shape = {noreplay_probs.shape} dtype = {noreplay_probs.dtype}", flush=True)
+                print(f"DEBUG: TopKRouter.routing: output noreplay map   shape = {routing_noreplay_map.shape} dtype = {routing_noreplay_map.dtype}", flush=True)
+                print(f"DEBUG: TopKRouter.routing: topk noreplay indices shape = {topk_routing_noreplay_indices.shape} dtype = {topk_routing_noreplay_indices.dtype}", flush=True)
 
         # Apply token dropping to probs and routing_map.
         if self.config.moe_expert_capacity_factor is not None:
@@ -677,7 +837,12 @@ class TopKRouter(Router):
             self.global_tokens_per_expert.zero_()
             self.ga_steps.zero_()
 
-    def forward(self, input: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+    def forward(
+        self,
+        input: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None,
+        topk_routing_replay_indices: Optional[torch.Tensor] = None,
+    ):
         """
         Forward pass of the router.
 
@@ -687,6 +852,19 @@ class TopKRouter(Router):
                                                    Shape [seq_length, bsz]. True for valid tokens,
                                                    False for padding tokens. Defaults to None.
         """
+        if False:
+            print(
+                f"DEBUG: TopKRouter.forward: moe layer idx = {self.moe_layer_idx} global layer num = {self.layer_number}",
+                flush=True,
+            )
+            if topk_routing_replay_indices is not None:
+                if isinstance(topk_routing_replay_indices, torch.Tensor):
+                    print(f"DEBUG: TopKRouter.forward: topk_routing_replay_indices shape = {topk_routing_replay_indices.shape} dtype = {topk_routing_replay_indices.dtype}", flush=True)
+                else:
+                    print(f"DEBUG: TopKRouter.forward: topk_routing_replay_indices is a {type(topk_routing_replay_indices).__name__}", flush=True)
+            else:
+                print(f"DEBUG: TopKRouter.forward: topk_routing_replay_indices is None", flush=True)
+
         self._maintain_float32_expert_bias()
 
         # Apply input jitter
@@ -697,7 +875,7 @@ class TopKRouter(Router):
             # Apply force load balancing with random logits for benchmark
             logits = apply_random_logits(logits)
 
-        probs, routing_map = self.routing(logits, padding_mask=padding_mask)
+        probs, routing_map = self.routing(logits, padding_mask=padding_mask, topk_routing_replay_indices=topk_routing_replay_indices)
 
         return probs, routing_map
 

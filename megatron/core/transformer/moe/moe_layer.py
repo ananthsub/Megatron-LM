@@ -92,6 +92,7 @@ class BaseMoELayer(MegatronModule, ABC):
         super(BaseMoELayer, self).__init__(config)
         self.config = config
         self.layer_number = layer_number
+        self.moe_layer_idx = None
         self.is_mtp_layer = is_mtp_layer
         self.ep_group = pg_collection.ep
         # use pg_collection.expt_tp_group as tensor parallel group in this module.
@@ -115,7 +116,7 @@ class BaseMoELayer(MegatronModule, ABC):
         self.experts = None
         self.shared_experts = None
         self.token_dispatcher: Optional[MoETokenDispatcher] = None
-        self.layer_number = layer_number
+        # self.layer_number = layer_number
 
     @abstractmethod
     def forward(self, hidden_states):
@@ -126,6 +127,21 @@ class BaseMoELayer(MegatronModule, ABC):
         """Set the layer number for the MoE layer."""
         self.layer_number = layer_number
         self.router.set_layer_number(layer_number)
+
+    def set_moe_layer_number(self, moe_layer_idx: int):
+        """Set the MoE layer number for the MoE layer."""
+        if self.moe_layer_idx is not None:
+            print(f"DEBUG: BaseMoELayer.set_moe_layer_number: warning: cur moe layer idx = {self.moe_layer_idx} vs {moe_layer_idx} global layer num = {self.layer_number}", flush=True)
+            return False
+        print(f"DEBUG: BaseMoELayer.set_moe_layer_number: moe layer idx = {moe_layer_idx} global layer num = {self.layer_number}", flush=True)
+        self.moe_layer_idx = moe_layer_idx
+        self.router.set_moe_layer_number(moe_layer_idx)
+        return True
+
+    def set_num_moe_layers(self, num_moe_layers: int):
+        print(f"DEBUG: BaseMoELayer.set_num_moe_layers: {num_moe_layers}", flush=True)
+        self.num_moe_layers = num_moe_layers
+        self.router.set_num_moe_layers(num_moe_layers)
 
 
 class MoELayer(BaseMoELayer):
@@ -176,6 +192,7 @@ class MoELayer(BaseMoELayer):
 
         # Initialize latent projections.
         if self.config.moe_latent_size:
+            print(f"DEBUG: MoELayer: moe latent size = {self.config.moe_latent_size} hidden size = {self.config.hidden_size}", flush=True)
             assert HAVE_TE, "TransformerEngine is required for MoE latent projections."
             self.fc1_latent_proj = TELinear(
                 self.config.hidden_size,
@@ -199,6 +216,8 @@ class MoELayer(BaseMoELayer):
                 skip_weight_param_allocation=False,
                 is_expert=False,
             )
+        else:
+            print(f"DEBUG: MoELayer: no latent moe", flush=True)
 
         # Initialize token dispatcher
         if config.moe_token_dispatcher_type == "allgather":
@@ -237,6 +256,7 @@ class MoELayer(BaseMoELayer):
 
         # Initialize shared experts
         if self.use_shared_expert:
+            print(f"DEBUG: MoELayer: use shared experts", flush=True)
             self.shared_experts = build_module(
                 self.submodules.shared_experts,
                 config=self.config,
@@ -245,19 +265,21 @@ class MoELayer(BaseMoELayer):
             )
             if self.shared_expert_overlap:
                 self.token_dispatcher.set_shared_experts(self.shared_experts)
+        else:
+            print(f"DEBUG: MoELayer: no shared experts", flush=True)
 
         # Cudagraph tensor store for resuming the forward pass from the end of the cudagraph.
         self.cudagraph_tensor_store = MoECudaGraphTensorStore()
         self.fwd_execution_map = ["route", "expert_compute", "postprocess"]
 
     @maybe_skip_or_early_return_by_cudagraph("route")
-    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None, moe_topk_routing_replay_indices: Optional[torch.Tensor] = None):
         """Compute token routing for preprocessing.
 
         This method uses the router to determine which experts to send each token to,
         producing routing probabilities and a mapping.
         """
-        probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
+        probs, routing_map = apply_module(self.router)(hidden_states, padding_mask, moe_topk_routing_replay_indices)
         return probs, routing_map
 
     @maybe_skip_or_early_return_by_cudagraph("preprocess")
@@ -367,6 +389,7 @@ class MoELayer(BaseMoELayer):
         hidden_states: torch.Tensor,
         intermediate_tensors=None,
         padding_mask: Optional[torch.Tensor] = None,
+        moe_topk_routing_replay_indices: Optional[torch.Tensor] = None,
     ):
         """Forward pass for the MoE layer.
 
@@ -394,12 +417,21 @@ class MoELayer(BaseMoELayer):
             padding_mask = padding_mask.transpose(0, 1).bool()
 
         # MoE forward: route -> dispatch -> compute -> combine
-        def custom_forward(hidden_states, intermediate_tensors=None, padding_mask=None):
+        def custom_forward(hidden_states, intermediate_tensors=None, padding_mask=None, moe_topk_routing_replay_indices=None):
+            # print(f"DEBUG: MoELayer.forward: custom forward: hidden states   shape = {hidden_states.shape}", flush=True)
+            # if moe_topk_routing_replay_indices is not None:
+            #     print(f"DEBUG: MoELayer.forward: custom forward: moe topk replay shape = {moe_topk_routing_replay_indices.shape}", flush=True)
             try:
                 if "route" in self.fwd_execution_map:
                     shared_expert_output = self.shared_experts_compute(hidden_states)
-                    probs, routing_map = self.route(hidden_states, padding_mask)
+                    # if isinstance(shared_expert_output, torch.Tensor):
+                    #     print(f"DEBUG: MoELayer.forward: custom forward: shared expert   shape = {shared_expert_output.shape}", flush=True)
+                    probs, routing_map = self.route(hidden_states, padding_mask, moe_topk_routing_replay_indices)
+                    # print(f"DEBUG: MoELayer.forward: custom forward: routed probs    shape = {probs.shape}", flush=True)
+                    # print(f"DEBUG: MoELayer.forward: custom forward: routing map     shape = {routing_map.shape}", flush=True)
                     hidden_states, probs = self.preprocess(hidden_states, probs, routing_map)
+                    # print(f"DEBUG: MoELayer.forward: custom forward: proc hidden     shape = {hidden_states.shape}", flush=True)
+                    # print(f"DEBUG: MoELayer.forward: custom forward: proc probs      shape = {probs.shape}", flush=True)
 
                     if intermediate_tensors is not None:
                         return hidden_states, probs, shared_expert_output
@@ -447,13 +479,24 @@ class MoELayer(BaseMoELayer):
                     hidden_states,
                     intermediate_tensors,
                     padding_mask,
+                    moe_topk_routing_replay_indices,
                 )
             else:
                 outputs = tensor_parallel.checkpoint(
-                    custom_forward, False, hidden_states, intermediate_tensors, padding_mask
+                    custom_forward,
+                    False,
+                    hidden_states,
+                    intermediate_tensors,
+                    padding_mask,
+                    moe_topk_routing_replay_indices,
                 )
         else:
-            outputs = custom_forward(hidden_states, intermediate_tensors, padding_mask)
+            outputs = custom_forward(
+                hidden_states,
+                intermediate_tensors,
+                padding_mask,
+                moe_topk_routing_replay_indices,
+            )
 
         return outputs
 
